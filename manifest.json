@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.18.2019",
+    "version":  "2026.10.18.2021",
     "files":  [
                   {
                       "path":  "app/web/app.js",
@@ -27,7 +27,7 @@
                   },
                   {
                       "path":  "app/server.ps1",
-                      "sha256":  "8D80418856534E2D152F984101ED9C7CAF4E1EAC6CEF000E12E3587F2C8B15F5"
+                      "sha256":  "5D1915A7FB5662D2533141E1FFE3308478FF2A884DF4E85291B47B789CE8135E"
                   },
                   {
                       "path":  "app/updater.ps1",

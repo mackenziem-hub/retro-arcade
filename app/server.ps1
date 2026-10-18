@@ -125,7 +125,9 @@ $handler = {
         if ($prefer) { $h['Prefer'] = $prefer }
         $p = @{ Uri = ($S.Cloud.url.TrimEnd('/') + '/rest/v1/' + $path); Method = $method; Headers = $h; TimeoutSec = $timeout; UseBasicParsing = $true }
         if ($body) { $p['Body'] = [Text.Encoding]::UTF8.GetBytes($body); $p['ContentType'] = 'application/json' }
-        Invoke-RestMethod @p
+        # Windows PowerShell hands a JSON array back as ONE object; emit the rows one by one so pipelines and @() behave.
+        $r = Invoke-RestMethod @p
+        if ($r -is [array]) { foreach ($x in $r) { $x } } else { $r }
     }
     function CloudUpload($user, $game, $kind, $bytes, $at) {
         $row = @{ family = (FamilyHash); player = $user; game = $game; kind = $kind; data = [Convert]::ToBase64String((Gz $bytes)); size = $bytes.Length; device = $S.Device; updated_at = (Iso $at) }
