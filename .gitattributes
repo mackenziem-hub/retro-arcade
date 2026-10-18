@@ -1,0 +1,2 @@
+# Byte-exact files so the SHA-256 in manifest.json always matches what is downloaded.
+* -text
