@@ -1,0 +1,41 @@
+{
+    "version":  "2026.10.18.1929",
+    "files":  [
+                  {
+                      "path":  "app/web/app.js",
+                      "sha256":  "808243B7ECE87E61AA0467D21E7626E87F075F008EF27D6944678C4791D65D03"
+                  },
+                  {
+                      "path":  "app/web/index.html",
+                      "sha256":  "70A40840634DBDEFA4B6CB58CD895C73674330D50477D542DD8B49F4D1E2FCE4"
+                  },
+                  {
+                      "path":  "app/web/play.html",
+                      "sha256":  "CAFD486B9584626770731237EC4F07E031CBB3243BFDE54CA83D6AC8BB1F76D7"
+                  },
+                  {
+                      "path":  "app/web/style.css",
+                      "sha256":  "4659DC27D0B10A0D2A53584DAB59366F36E62FF4EE1DE1C5667275D68CD0E56D"
+                  },
+                  {
+                      "path":  "app/server.ps1",
+                      "sha256":  "D56F51790A13B94C8450616112E41C6247FDD7BEF1AE9ACAD6157E40CB22E436"
+                  },
+                  {
+                      "path":  "app/updater.ps1",
+                      "sha256":  "77A8DD80EB4687C59A35B84FB4D2CA3CE31CB6D116CDC685E60388492022B9B4"
+                  },
+                  {
+                      "path":  "app/fetch-covers.ps1",
+                      "sha256":  "26C796F779F6CFEDB3217B5135C54FCCF5DA33005A7073FB5DE3AB020EA48FDF"
+                  },
+                  {
+                      "path":  "READ ME FIRST.txt",
+                      "sha256":  "24F41B6766E5CFFD111E7109CF1F4CD7889DDD5A7F1AA5CBA5714DCB488786F8"
+                  },
+                  {
+                      "path":  "Copy to Drive.ps1",
+                      "sha256":  "F176F27912B05FC846D8F255A2A022A3E6D005186F2E5BB266F31A8CFBAB5777"
+                  }
+              ]
+}

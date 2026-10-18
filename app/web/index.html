@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retro Arcade</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<dialog id="userDlg">
+  <form method="dialog" id="userForm">
+    <h3 id="userDlgTitle" style="margin-top:0">New player</h3>
+    <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required>
+    <div class="colors" id="userColors"></div>
+    <div class="btns">
+      <button type="button" class="btn danger" id="userDelete" hidden>Remove</button>
+      <button type="button" class="btn" id="userCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
+<script src="/app.js"></script>
+</body>
+</html>

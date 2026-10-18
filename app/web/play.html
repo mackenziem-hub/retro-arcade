@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Retro Arcade</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="play">
+<div class="hud">
+  <button class="btn" id="exit">&larr; Menu</button>
+  <button class="btn" id="saveNow">Save now</button>
+  <span id="status" style="font-size:13px;color:var(--muted)"></span>
+</div>
+<div id="game"></div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
+
+<script>
+// Auto-save: every 30 seconds, when the tab is hidden, and on the way back to the menu,
+// the in-game save (sram) and a full snapshot (state) are written to saves/<player>/ on disk.
+// Opening the game again restores the snapshot, so you pick up exactly where you stopped.
+const params = new URLSearchParams(location.search);
+const gameId = params.get('game'), userId = params.get('user');
+const api = kind => `/api/save?user=${encodeURIComponent(userId)}&game=${encodeURIComponent(gameId)}&kind=${kind}`;
+let ready = false, saving = false, lastSaved = 0;
+
+const statusEl = document.getElementById('status');
+function setStatus(t) { statusEl.textContent = t; }
+function toast(msg, actLabel, act, ms = 7000) {
+  const t = document.getElementById('toast'), b = document.getElementById('toastAct');
+  document.getElementById('toastMsg').textContent = msg;
+  b.hidden = !actLabel; b.textContent = actLabel || '';
+  b.onclick = () => { t.classList.remove('show'); act && act(); };
+  t.classList.add('show');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+async function getBytes(kind) {
+  const r = await fetch(api(kind));
+  return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+}
+async function putBytes(kind, bytes) {
+  await fetch(api(kind), { method: 'POST', body: bytes });
+}
+
+async function restore() {
+  const gm = window.EJS_emulator.gameManager;
+  try {
+    const sram = await getBytes('sram');
+    if (sram) {
+      const p = gm.getSaveFilePath();
+      const dir = p.substring(0, p.lastIndexOf('/'));
+      try { gm.FS.mkdirTree ? gm.FS.mkdirTree(dir) : gm.FS.mkdir(dir); } catch {}
+      try { gm.FS.unlink(p); } catch {}
+      gm.FS.writeFile(p, sram);
+      gm.loadSaveFiles();
+    }
+    const state = gm.supportsStates() ? await getBytes('state') : null;
+    if (state) {
+      gm.loadState(state);
+      toast('Picked up where you left off.', 'Start from the title screen instead', () => gm.restart());
+    }
+  } catch (e) { console.warn('restore failed', e); }
+  ready = true;
+  setStatus('Auto-save on');
+}
+
+async function autosave() {
+  if (!ready || saving) return;
+  saving = true;
+  try {
+    const gm = window.EJS_emulator.gameManager;
+    const sram = gm.getSaveFile();
+    if (sram && sram.length) await putBytes('sram', sram);
+    if (gm.supportsStates()) await putBytes('state', gm.getState().slice());
+    lastSaved = Date.now();
+    setStatus('Saved ' + new Date(lastSaved).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+  } catch (e) { console.warn('autosave failed', e); setStatus('Save failed, will retry'); }
+  saving = false;
+}
+
+async function exitToMenu() {
+  setStatus('Saving...');
+  await autosave();
+  location.replace('/#lib');
+}
+
+document.getElementById('exit').onclick = exitToMenu;
+document.getElementById('saveNow').onclick = async () => { await autosave(); toast('Saved.', null, null, 2500); };
+setInterval(autosave, 30000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
+// Back button: save first, then go back to the menu (one step).
+history.pushState({ playing: true }, '');
+window.addEventListener('popstate', exitToMenu);
+
+(async () => {
+  const lib = await (await fetch('/api/library')).json();
+  const g = (lib.games || []).find(x => x.id === gameId);
+  if (!g) { document.getElementById('game').innerHTML = '<p style="padding:80px 20px">Game not found.</p>'; return; }
+  document.title = g.title.replace(/\s*\([^)]*\)/g, '') + ' - Retro Arcade';
+  window.EJS_player = '#game';
+  window.EJS_core = g.system;
+  window.EJS_gameUrl = g.url;
+  window.EJS_gameName = g.title;
+  window.EJS_pathtodata = '/emulatorjs/';
+  window.EJS_startOnLoaded = true;
+  window.EJS_disableDatabases = true;   // the game files already live on disk, no need to copy them into the browser
+  window.EJS_color = '#ff5d8f';
+  window.EJS_backgroundColor = '#0f1020';
+  window.EJS_threads = g.system === 'psp' && window.crossOriginIsolated;
+  if (g.system === 'psx' && lib.biosPsx) window.EJS_biosUrl = '/bios/scph5501.bin';
+  window.EJS_onGameStart = restore;
+  const s = document.createElement('script');
+  s.src = '/emulatorjs/loader.js';
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

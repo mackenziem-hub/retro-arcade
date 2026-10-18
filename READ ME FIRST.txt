@@ -1,0 +1,39 @@
+RETRO ARCADE
+============
+
+PLAY
+  1. Double-click "Play Retro Arcade.bat".
+  2. A small black window opens (leave it open) and the arcade opens in your browser.
+  3. Pick your player, pick a game.
+
+SAVING
+  - Auto-save runs every 30 seconds and when you press "Menu".
+    Open the game again and you pick up exactly where you stopped.
+  - "Start from the title screen instead" (bottom of the screen when a game opens)
+    ignores the auto-save and uses the game's own save file.
+  - Saves are kept in the "saves" folder, one folder per player.
+    Copy that folder to back them up.
+
+PLAYERS
+  - Add a player with the + button on the "Who's playing?" screen.
+  - Right-click a player to rename them, change their colour or remove them.
+
+CONTROLS
+  - Controllers work automatically (one per player for multiplayer games).
+  - Keyboard and remapping: open the game menu at the bottom of the game screen
+    and choose Controls.
+  - On the DS games, click or tap the bottom screen to use the touch screen.
+
+ADDING GAMES
+  Put game files in the matching folder inside "games"
+  (for example games\Nintendo 64). Supported: Game Boy, Game Boy Color,
+  Game Boy Advance, Nintendo DS, NES, SNES, Nintendo 64, PlayStation, PSP.
+  Also: "GameCube & Wii", "PlayStation 2" and "Nintendo 3DS". These open in their own
+  emulator window (Dolphin, PCSX2, Azahar, all included in the emulators folder) and
+  save on their own. PlayStation 2 games need a PS2 BIOS file in games\BIOS.
+  Box art: run app\fetch-covers.ps1 once while the arcade is open (needs internet).
+
+POKEMMO (play Pokemon online together)
+  Extras\PokeMMO (Windows)\PokeMMO.exe  - the PC game.
+  Extras\PokeMMO-Client.apk             - the Android app.
+  It needs a copy of Pokemon Black or White (version 1) in its "roms" folder.
