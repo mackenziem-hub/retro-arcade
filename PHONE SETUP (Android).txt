@@ -26,12 +26,17 @@ updates itself when it is online.
    Check the system shown next to each one and tap Add.
    After they are added you can delete the copies in Download to free space.
 
-4. PLAY ONCE WHILE ONLINE
+4. CONNECT FAMILY SAVES
+   On the "Who's playing?" screen tap "Connect family saves" and type the family code.
+   The family's players appear, and saves follow you between the phone and the computers.
+
+5. PLAY ONCE WHILE ONLINE
    The first time you play each kind of system, its emulator downloads.
    After that it works with no internet.
 
 GOOD TO KNOW
-   - Saves stay on the phone (they do not sync with the computer).
+   - DS games: tap "Stylus" to hide the buttons and use the touch screen, "Swap" to flip the screens.
+   - "Go back" returns to an earlier snapshot if something went wrong.
    - Press and hold a game to remove it; its saves are kept.
    - Do not clear Chrome's site data for the arcade, that erases its games and saves.
    - GameCube, PS2 and 3DS games are computer only.

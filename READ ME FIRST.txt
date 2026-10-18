@@ -7,12 +7,20 @@ PLAY
   3. Pick your player, pick a game.
 
 SAVING
-  - Auto-save runs every 30 seconds and when you press "Menu".
+  - The arcade keeps the game's own save the moment the game saves, and takes a
+    full snapshot every 30 seconds and when you press "Menu".
     Open the game again and you pick up exactly where you stopped.
+  - "Go back" (top of the game screen) returns to an earlier snapshot if something went wrong.
   - "Start from the title screen instead" (bottom of the screen when a game opens)
-    ignores the auto-save and uses the game's own save file.
+    ignores the snapshot and uses the game's own save file.
   - Saves are kept in the "saves" folder, one folder per player.
-    Copy that folder to back them up.
+
+FAMILY SAVES (saves follow you between devices)
+  Click the cloud button beside your name and type the family code.
+  From then on, saves made on this computer, the other computer and the phone
+  are shared: start a game on one, carry on from another. The player list is
+  shared too. It needs internet to sync, but everything still works offline and
+  catches up later.
 
 PLAYERS
   - Add a player with the + button on the "Who's playing?" screen.

@@ -22,6 +22,7 @@ $State = [hashtable]::Synchronized(@{
     Cloud  = @{ url = "$($cfg.cloud.url)"; key = "$($cfg.cloud.key)" }
     Family = "$($cfg.familyCode)"
     Device = $env:COMPUTERNAME
+    Log    = Join-Path $Root 'arcade.log'
 })
 # BIOS files live with the games (games\BIOS) so they move together.
 $State.Bios = Join-Path $State.Games 'BIOS'
@@ -114,7 +115,11 @@ $handler = {
     function Gz($b) { $ms = New-Object IO.MemoryStream; $gz = New-Object IO.Compression.GZipStream($ms, [IO.Compression.CompressionLevel]::Optimal); $gz.Write($b, 0, $b.Length); $gz.Dispose(); ,$ms.ToArray() }
     function Ungz($b) { $in = New-Object IO.MemoryStream(,$b); $gz = New-Object IO.Compression.GZipStream($in, [IO.Compression.CompressionMode]::Decompress); $out = New-Object IO.MemoryStream; $gz.CopyTo($out); $gz.Dispose(); ,$out.ToArray() }
     function Iso($ms) { [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).ToString('o') }
-    function FromIso($s) { [DateTimeOffset]::Parse($s, [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds() }
+    # Invoke-RestMethod turns ISO timestamps into DateTime objects on its own; handle both.
+    function FromIso($s) {
+        if ($s -is [DateTime]) { $d = $s; if ($d.Kind -eq 'Unspecified') { $d = [DateTime]::SpecifyKind($d, 'Utc') }; return ([DateTimeOffset]$d).ToUnixTimeMilliseconds() }
+        [DateTimeOffset]::Parse([string]$s, [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds()
+    }
     function Cloud($path, $method = 'GET', $body = $null, $timeout = 15, $prefer = $null) {
         $h = @{ apikey = $S.Cloud.key; Authorization = "Bearer $($S.Cloud.key)"; 'x-family' = $S.Family }
         if ($prefer) { $h['Prefer'] = $prefer }
@@ -128,10 +133,34 @@ $handler = {
     }
     function CloudNewer($user, $game, $kind, $localAt) {
         $q = "arcade_saves?player=eq.$([Uri]::EscapeDataString($user))&game=eq.$([Uri]::EscapeDataString($game))&kind=eq.$kind"
-        $meta = @(Cloud "$q&select=updated_at" 'GET' $null 8)
+        $meta = @(Cloud "$q&select=updated_at" 'GET' $null 8 | Where-Object { $null -ne $_ })
         if (-not $meta.Count -or (FromIso $meta[0].updated_at) -le ($localAt + 1000)) { return $null }
         $row = @(Cloud "$q&select=data,updated_at" 'GET' $null 60)[0]
         @{ bytes = (Ungz ([Convert]::FromBase64String($row.data))); at = (FromIso $row.updated_at) }
+    }
+    function Log($m) { try { Add-Content $S.Log ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $m) } catch {} }
+    # Player list as JSON text, always an array, never with a byte-order mark.
+    function UsersJson() {
+        # The file already holds JSON; re-serializing through ConvertTo-Json wraps arrays oddly on Windows PowerShell 5.1.
+        $t = [IO.File]::ReadAllText($S.Users).TrimStart([char]0xFEFF).Trim()
+        if (-not $t.StartsWith('[')) { throw 'users.json is not a list' }
+        $null = $t | ConvertFrom-Json
+        $t
+    }
+    function WriteUsers($arr) { [IO.File]::WriteAllText($S.Users, (ConvertTo-Json -InputObject @($arr) -Depth 5 -Compress), (New-Object Text.UTF8Encoding $false)) }
+    function ProfilesBody($at) { '{"family":"' + (FamilyHash) + '","data":' + (UsersJson) + ',"updated_at":"' + (Iso $at) + '"}' }
+    # Saves made before the family store was connected (or while offline) get uploaded when they are newer than the store's copy.
+    function Backfill() {
+        if (-not (CloudReady) -or -not (Test-Path $S.Saves)) { return }
+        $have = @{}
+        try { Cloud 'arcade_saves?select=player,game,kind,updated_at' 'GET' $null 20 | Where-Object { $_ } | ForEach-Object { $have["$($_.player)|$($_.game)|$($_.kind)"] = (FromIso $_.updated_at) } } catch { Log "backfill list failed: $($_.Exception.Message)"; return }
+        $n = 0
+        foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.state' }) {
+            $user = $f.Directory.Name; $game = $f.BaseName; $kind = $f.Extension.TrimStart('.'); $at = Ms $f.FullName
+            if ($have["$user|$game|$kind"] -and $have["$user|$game|$kind"] -ge ($at - 1000)) { continue }
+            try { CloudUpload $user $game $kind ([IO.File]::ReadAllBytes($f.FullName)) $at; $n++ } catch { Log "backfill failed ($user $game $kind): $($_.Exception.Message)" }
+        }
+        if ($n) { Log "backfill: uploaded $n save(s)" }
     }
     function Dirty() { $m = "$($S.Users).meta"; if (Test-Path $m) { Get-Content $m -Raw | ConvertFrom-Json } else { [pscustomobject]@{ at = 0; dirty = $false } } }
     function SetDirty($at, $dirty) { ConvertTo-Json @{ at = $at; dirty = $dirty } -Compress | Set-Content "$($S.Users).meta" -Encoding ASCII }
@@ -205,21 +234,22 @@ $handler = {
             if ($req.HttpMethod -eq 'POST') {
                 $body = [Text.Encoding]::UTF8.GetString((ReadBody))
                 $null = $body | ConvertFrom-Json
-                [IO.File]::WriteAllText($S.Users, $body, [Text.Encoding]::UTF8)
+                [IO.File]::WriteAllText($S.Users, $body, (New-Object Text.UTF8Encoding $false))
                 $at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); SetDirty $at $true
-                if (CloudReady) { try { Cloud 'arcade_profiles?on_conflict=family' 'POST' (ConvertTo-Json @{ family = (FamilyHash); data = ($body | ConvertFrom-Json); updated_at = (Iso $at) } -Depth 5 -Compress) 15 'resolution=merge-duplicates' | Out-Null; SetDirty $at $false } catch { Write-Host "profiles push failed: $($_.Exception.Message)" } }
+                if (CloudReady) { try { Cloud 'arcade_profiles?on_conflict=family' 'POST' (ProfilesBody $at) 15 'resolution=merge-duplicates' | Out-Null; SetDirty $at $false } catch { Log "profiles push failed: $($_.Exception.Message)" } }
                 SendJson @{ ok = $true }
             } else {
                 if (CloudReady) {
                     try {
                         $m = Dirty
-                        $row = @(Cloud 'arcade_profiles?select=data,updated_at' 'GET' $null 8)
+                        $row = @(Cloud 'arcade_profiles?select=data,updated_at' 'GET' $null 8 | Where-Object { $null -ne $_ })
                         if ($row.Count -and (FromIso $row[0].updated_at) -gt ([long]$m.at + 1000)) {
-                            [IO.File]::WriteAllText($S.Users, (ConvertTo-Json $row[0].data -Depth 5 -Compress), [Text.Encoding]::UTF8); SetDirty (FromIso $row[0].updated_at) $false
+                            $list = @($row[0].data | Where-Object { $_ -and $_.id })
+                            if ($list.Count -ge 1) { WriteUsers $list; SetDirty (FromIso $row[0].updated_at) $false }
                         } elseif ($m.dirty -and (Test-Path $S.Users)) {
-                            Cloud 'arcade_profiles?on_conflict=family' 'POST' (ConvertTo-Json @{ family = (FamilyHash); data = (Get-Content $S.Users -Raw | ConvertFrom-Json); updated_at = (Iso $m.at) } -Depth 5 -Compress) 15 'resolution=merge-duplicates' | Out-Null; SetDirty $m.at $false
+                            Cloud 'arcade_profiles?on_conflict=family' 'POST' (ProfilesBody $m.at) 15 'resolution=merge-duplicates' | Out-Null; SetDirty $m.at $false
                         }
-                    } catch { Write-Host "profiles sync failed: $($_.Exception.Message)" }
+                    } catch { Log "profiles sync failed: $($_.Exception.Message)" }
                 }
                 if (Test-Path $S.Users) { Send 200 ([IO.File]::ReadAllBytes($S.Users)) 'application/json' } else { SendJson @() }
             }
@@ -246,12 +276,12 @@ $handler = {
                 }
                 SendJson @{ ok = $true; bytes = $data.Length }
                 try { $res.Close() } catch {}
-                if ($data.Length -gt 0 -and (CloudReady)) { try { CloudUpload $user $game $kind $data $at } catch { Write-Host "upload failed ($game $kind): $($_.Exception.Message)" } }
+                if ($data.Length -gt 0 -and (CloudReady)) { try { CloudUpload $user $game $kind $data $at } catch { Log "upload failed ($game $kind): $($_.Exception.Message)" } }
             } else {
                 $fromCloud = $false
                 if (CloudReady) {
                     try { $n = CloudNewer $user $game $kind (Ms $file); if ($n) { WriteAtomic $file $n.bytes $n.at; $fromCloud = $true } }
-                    catch { Write-Host "cloud check failed ($game $kind): $($_.Exception.Message)" }
+                    catch { Log "cloud check failed ($game $kind): $($_.Exception.Message)" }
                 }
                 if (Test-Path $file) {
                     $res.AddHeader('X-Saved-At', (Ms $file)); if ($fromCloud) { $res.AddHeader('X-From-Cloud', '1') }
@@ -279,7 +309,7 @@ $handler = {
             for ($i = 1; $i -le $SnapshotSlots; $i++) { $f = "$file.h$i"; if (Test-Path $f) { $list += @{ id = "local:h$i"; label = 'On this computer'; at = (Ms $f) } } }
             if (CloudReady) {
                 try {
-                    Cloud "arcade_save_history?select=id,updated_at,device&player=eq.$([Uri]::EscapeDataString($user))&game=eq.$([Uri]::EscapeDataString($game))&kind=eq.state&order=updated_at.desc" 'GET' $null 8 |
+                    Cloud "arcade_save_history?select=id,updated_at,device&player=eq.$([Uri]::EscapeDataString($user))&game=eq.$([Uri]::EscapeDataString($game))&kind=eq.state&order=updated_at.desc" 'GET' $null 8 | Where-Object { $_ } |
                         ForEach-Object { $list += @{ id = "cloud:$($_.id)"; label = 'Family store' + $(if ($_.device) { " ($($_.device))" }); at = (FromIso $_.updated_at) } }
                 } catch {}
             }
@@ -294,7 +324,7 @@ $handler = {
                     ForEach-Object { $k = $_.BaseName; $t = (Ms $_.FullName); if (-not $out[$k] -or $out[$k] -lt $t) { $out[$k] = $t } }
             }
             if ($user -and (CloudReady)) {
-                try { Cloud "arcade_recent?select=game,updated_at&player=eq.$([Uri]::EscapeDataString($user))" 'GET' $null 8 |
+                try { Cloud "arcade_recent?select=game,updated_at&player=eq.$([Uri]::EscapeDataString($user))" 'GET' $null 8 | Where-Object { $_ } |
                         ForEach-Object { $t = (FromIso $_.updated_at); if (-not $out[$_.game] -or $out[$_.game] -lt $t) { $out[$_.game] = $t } } } catch {}
             }
             SendJson @{ recent = @($out.Keys | ForEach-Object { @{ id = $_; at = $out[$_] } } | Sort-Object { $_.at } -Descending) }
@@ -311,15 +341,23 @@ $handler = {
                     try { Cloud 'arcade_recent?select=game&limit=1' 'GET' $null 10 | Out-Null } catch { $S.Family = ''; SendJson @{ ok = $false; error = 'Could not reach the family store. Check the internet connection and the code.' }; return }
                     # First connection: take the family's player list if there is one, otherwise share ours.
                     try {
-                        $row = @(Cloud 'arcade_profiles?select=data,updated_at' 'GET' $null 8)
-                        if ($row.Count) { [IO.File]::WriteAllText($S.Users, (ConvertTo-Json $row[0].data -Depth 5 -Compress), [Text.Encoding]::UTF8); SetDirty (FromIso $row[0].updated_at) $false }
-                        elseif (Test-Path $S.Users) { $at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); Cloud 'arcade_profiles?on_conflict=family' 'POST' (ConvertTo-Json @{ family = (FamilyHash); data = (Get-Content $S.Users -Raw | ConvertFrom-Json); updated_at = (Iso $at) } -Depth 5 -Compress) 15 'resolution=merge-duplicates' | Out-Null; SetDirty $at $false }
-                    } catch { Write-Host "profile reconcile failed: $($_.Exception.Message)" }
+                        $row = @(Cloud 'arcade_profiles?select=data,updated_at' 'GET' $null 8 | Where-Object { $null -ne $_ })
+                        $list = if ($row.Count) { @($row[0].data | Where-Object { $_ -and $_.id }) } else { @() }
+                        if ($list.Count -ge 1) { WriteUsers $list; SetDirty (FromIso $row[0].updated_at) $false }
+                        elseif (Test-Path $S.Users) { $at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); Cloud 'arcade_profiles?on_conflict=family' 'POST' (ProfilesBody $at) 15 'resolution=merge-duplicates' | Out-Null; SetDirty $at $false }
+                    } catch { Log "profile reconcile failed: $($_.Exception.Message)" }
                 }
                 $c = Get-Content $S.Config -Raw | ConvertFrom-Json
                 $c | Add-Member -NotePropertyName familyCode -NotePropertyValue $code -Force
                 ConvertTo-Json $c -Depth 4 | Set-Content $S.Config -Encoding ASCII
                 SendJson @{ ok = $true; connected = [bool]$code }
+                try { $res.Close() } catch {}
+                if ($code) { Backfill }
+            }
+            elseif ($q['backfill']) {
+                SendJson @{ ok = $true }
+                try { $res.Close() } catch {}
+                Backfill
             } else {
                 SendJson @{ available = [bool]$S.Cloud.url; connected = (CloudReady); device = $S.Device }
             }
@@ -352,6 +390,10 @@ $handler = {
 # A small pool so a big game download does not block saves or the menu.
 $pool = [RunspaceFactory]::CreateRunspacePool(1, 6); $pool.Open()
 $jobs = New-Object Collections.ArrayList
+# On startup, push any saves the family store is missing (made offline, or before it was connected).
+if ($State.Cloud.url -and $State.Family) {
+    Start-Job -ScriptBlock { param($port) Start-Sleep 3; try { Invoke-RestMethod "http://localhost:$port/api/sync?backfill=1" -TimeoutSec 5 | Out-Null } catch {} } -ArgumentList $port | Out-Null
+}
 while ($listener.IsListening) {
     $ctx = $listener.GetContext()
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $pool

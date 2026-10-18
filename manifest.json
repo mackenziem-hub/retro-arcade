@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.18.1956",
+    "version":  "2026.10.18.2019",
     "files":  [
                   {
                       "path":  "app/web/app.js",
@@ -27,7 +27,7 @@
                   },
                   {
                       "path":  "app/server.ps1",
-                      "sha256":  "D6913BA44E6F80D3444BF473F3A4C2853CBE7F408B980ADBAA8A72B39EAEE469"
+                      "sha256":  "8D80418856534E2D152F984101ED9C7CAF4E1EAC6CEF000E12E3587F2C8B15F5"
                   },
                   {
                       "path":  "app/updater.ps1",
@@ -39,15 +39,15 @@
                   },
                   {
                       "path":  "READ ME FIRST.txt",
-                      "sha256":  "24F41B6766E5CFFD111E7109CF1F4CD7889DDD5A7F1AA5CBA5714DCB488786F8"
+                      "sha256":  "88AED058B6FB2BCEA79844F54BA06066B7DAF5FA908EB6B8322D4901976E9B8F"
                   },
                   {
                       "path":  "PHONE SETUP (Android).txt",
-                      "sha256":  "D77582B9E750063977D0C80003A8BA7413F8B826258A740BF1C060AE1E0ABD12"
+                      "sha256":  "BED433169DAAE2DC03624CA3777D5833B666E511F80E433EDE1C7D6F1AA2661C"
                   },
                   {
                       "path":  "Copy to Drive.ps1",
-                      "sha256":  "F176F27912B05FC846D8F255A2A022A3E6D005186F2E5BB266F31A8CFBAB5777"
+                      "sha256":  "803FE67EFE3BF832F4C110F4FEACA86D5BC5DB21E728DDCAB0A1FF74036D0DCC"
                   }
               ]
 }

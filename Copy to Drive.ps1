@@ -28,7 +28,7 @@ foreach ($folder in 'BIOS', 'Game Boy', 'Game Boy Color', 'Game Boy Advance', 'N
     if (Test-Path $src) { robocopy $src (Join-Path $Target "games\$folder") /E /XF *.cia /NFL /NDL /NJH /NJS /R:1 /W:1 | Out-Null }
 }
 # The copy reads games from its own folder.
-$c = [ordered]@{ port = 8642; gamesDir = 'games'; updateUrl = $cfg.updateUrl }
+$c = [ordered]@{ port = 8642; gamesDir = 'games'; updateUrl = $cfg.updateUrl; cloud = $cfg.cloud; familyCode = $cfg.familyCode }
 ConvertTo-Json $c | Set-Content (Join-Path $Target 'config.json') -Encoding ASCII
 
 # PokeMMO extras for the other computer and an Android phone.
