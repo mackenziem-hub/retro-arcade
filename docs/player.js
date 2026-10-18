@@ -2,12 +2,15 @@
 // The page gives it a backend (where saves live) and this handles the rest:
 //   - instant save the moment the game saves (checked every 2 seconds)
 //   - a full snapshot every 30 seconds, when the app is hidden, and on the way back to the menu
-//   - "Go back" to an earlier snapshot (local history + family store history)
-//   - DS extras: Stylus mode (hides on-screen buttons) and Swap screens
+//   - quick menu (Esc, the Menu button, Select+Start or Guide on a controller): manual slots, Go back, screenshot, fast forward
+//   - DS extras: Swap screens, Stylus mode on phones, and a virtual stylus driven by the controller or keyboard
+//   - playtime, vibration on touch buttons, landscape on phones
 window.ArcadePlayer = function (backend) {
   const { game } = backend;
   const $ = id => document.getElementById(id);
-  let ready = false, busy = false, lastSramHash = null, started = false;
+  const isTouch = matchMedia('(pointer: coarse)').matches;
+  const isDS = game.system === 'nds';
+  let ready = false, busy = false, lastSramHash = null, started = false, menuOpen = false, ff = false;
 
   const setStatus = t => { $('status').textContent = t; };
   function toast(msg, actLabel, act, ms = 7000) {
@@ -19,11 +22,14 @@ window.ArcadePlayer = function (backend) {
     clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), ms);
   }
   const ago = at => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : new Date(at).toLocaleDateString(); };
+  const clock = at => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   function hash(b) { let h = 2166136261; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 16777619); } return h >>> 0; }
-  const gm = () => window.EJS_emulator.gameManager;
+  const E = () => window.EJS_emulator, gm = () => E().gameManager;
 
+  // ---------- saving ----------
   async function restore() {
     started = true;
+    if (bare) { ready = true; setStatus('bare'); return; }
     try {
       const sram = await backend.getSave('sram');
       if (sram) {
@@ -42,9 +48,14 @@ window.ArcadePlayer = function (backend) {
     } catch (e) { console.warn('restore failed', e); }
     ready = true;
     setStatus('Auto-save on');
+    if (isDS && !bare) setupStylus();
+    if (isTouch && !bare) setupTouch();
+    // Browsers hold the sound (and with it the emulator) until the page has been clicked once.
+    setTimeout(() => {
+      let f = 0; try { f = gm().getFrameNum(); } catch {}
+      if (f < 30 && !menuOpen) { const o = $('tapToPlay'); o.hidden = false; const go = () => { o.hidden = true; try { E().elements.parent.focus(); } catch {} }; o.onclick = go; o.ontouchend = go; }
+    }, 2500);
   }
-
-  // The game wrote its own save (in-game Save menu): keep it right away.
   async function checkSram() {
     if (!ready || busy) return;
     try {
@@ -54,60 +65,164 @@ window.ArcadePlayer = function (backend) {
       if (h === lastSramHash) return;
       lastSramHash = h; busy = true;
       await backend.putSave('sram', sram.slice(), Date.now());
-      setStatus('Game saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+      setStatus('Game saved ' + clock(Date.now()));
     } catch (e) { console.warn('sram save failed', e); }
     busy = false;
   }
-  async function snapshot() {
-    if (!ready || busy) return;
-    busy = true;
+  async function snapshot(kind = 'state') {
+    if (!ready || busy) return false;
+    busy = true; let ok = true;
     try {
       const sram = gm().getSaveFile();
       if (sram && sram.length) { lastSramHash = hash(sram); await backend.putSave('sram', sram.slice(), Date.now()); }
-      if (gm().supportsStates()) await backend.putSave('state', gm().getState().slice(), Date.now());
-      setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
-    } catch (e) { console.warn('snapshot failed', e); setStatus('Save failed, will retry'); }
-    busy = false;
+      if (gm().supportsStates()) await backend.putSave(kind, gm().getState().slice(), Date.now());
+      setStatus('Saved ' + clock(Date.now()));
+    } catch (e) { console.warn('snapshot failed', e); setStatus('Save failed, will retry'); ok = false; }
+    busy = false; return ok;
   }
   async function exitToMenu() { setStatus('Saving...'); await snapshot(); location.replace(backend.menuUrl); }
+
+  // ---------- quick menu ----------
+  const quick = $('quickDlg');
+  function pause(on) { try { if (on && !E().paused) E().togglePlaying(); if (!on && E().paused) E().togglePlaying(); } catch {} }
+  async function openQuick() {
+    if (!started || menuOpen) return;
+    menuOpen = true; pause(true);
+    const slots = [];
+    for (let i = 1; i <= 3; i++) { let s = null; try { s = await backend.peekSave('slot' + i); } catch {} slots.push(s); }
+    $('quickSlots').innerHTML = slots.map((s, i) => `
+      <div class="slot"><span>Slot ${i + 1}<small>${s ? 'saved ' + clock(s.at) + ', ' + ago(s.at) : 'empty'}</small></span>
+        <button type="button" class="btn" data-save="${i + 1}" data-nav>Save</button>
+        <button type="button" class="btn" data-load="${i + 1}" data-nav ${s ? '' : 'disabled'}>Load</button></div>`).join('');
+    $('quickSlots').querySelectorAll('[data-save]').forEach(b => b.onclick = async () => { closeQuick(); if (await snapshot('slot' + b.dataset.save)) toast('Saved to slot ' + b.dataset.save + '.', null, null, 2500); });
+    $('quickSlots').querySelectorAll('[data-load]').forEach(b => b.onclick = async () => { closeQuick(); try { const s = await backend.getSave('slot' + b.dataset.load); if (s) { gm().loadState(s.bytes); toast('Loaded slot ' + b.dataset.load + '.', null, null, 2500); } } catch { toast('Could not load that slot.'); } });
+    $('ffBtn').textContent = 'Fast forward: ' + (ff ? 'on' : 'off');
+    $('stylusBtn').textContent = 'Virtual stylus: ' + (stylus.on ? 'on' : 'off');
+    quick.showModal(); ArcadeNav.focusFirst();
+  }
+  function closeQuick() { if (!menuOpen) return; quick.close(); menuOpen = false; pause(false); try { E().elements.parent.focus(); } catch {} }
+  $('quickResume').onclick = closeQuick;
+  $('quickExit').onclick = () => { closeQuick(); exitToMenu(); };
+  $('quickBack').onclick = () => { quick.close(); goBack(); };
+  $('ffBtn').onclick = () => { ff = !ff; try { E().changeSettingOption('fastForward', ff ? 'enabled' : 'disabled'); } catch (e) { console.warn(e); } closeQuick(); setStatus(ff ? 'Fast forward on' : 'Auto-save on'); };
+  $('shotBtn').onclick = () => { closeQuick(); try { E().screenshot(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = game.title.replace(/\s*\([^)]*\)/g, '') + ' ' + new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.') + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Screenshot saved to Downloads.', null, null, 3000); }); } catch (e) { toast('Could not take a screenshot.'); } };
+  quick.addEventListener('cancel', e => { e.preventDefault(); closeQuick(); });
 
   async function goBack() {
     let list;
     try { list = await backend.history(); } catch { list = []; }
     const dlg = $('historyDlg'), box = $('historyList');
-    box.innerHTML = list.length ? list.map(h => `<button class="hist" data-id="${h.id}">${h.label} <small>${ago(h.at)}</small></button>`).join('')
+    box.innerHTML = list.length ? list.map(h => `<button type="button" class="hist" data-id="${h.id}" data-nav>${h.label} <small>${ago(h.at)}</small></button>`).join('')
       : '<p class="hint">No earlier snapshots yet. They build up as you play.</p>';
     box.querySelectorAll('.hist').forEach(b => b.onclick = async () => {
-      dlg.close();
+      dlg.close(); menuOpen = false; pause(false);
       try { const s = await backend.historyBytes(b.dataset.id); gm().loadState(s.bytes); toast('Went back to ' + ago(s.at) + '.', null, null, 3000); }
       catch (e) { toast('Could not load that snapshot.'); }
     });
-    dlg.showModal();
+    dlg.showModal(); ArcadeNav.focusFirst();
+  }
+  $('historyClose').onclick = () => { $('historyDlg').close(); menuOpen = false; pause(false); };
+
+  // ---------- DS: swap, stylus mode, virtual stylus ----------
+  let top = true;
+  function swapScreens() { top = !top; try { E().changeSettingOption('melonds_screen_layout', top ? 'Top/Bottom' : 'Bottom/Top'); } catch (e) { console.warn(e); } }
+  $('swapBtn').onclick = () => { closeQuick(); swapScreens(); };
+  $('swap').onclick = swapScreens;
+  let pad = true;
+  $('stylus').onclick = () => { pad = !pad; E().toggleVirtualGamepad(pad); $('stylus').textContent = pad ? 'Stylus' : 'Buttons'; };
+
+  // Virtual stylus: a cursor over the touch screen moved with the right stick or I/J/K/L,
+  // tapped (or held to drag) with the right trigger or Space. It sends real pointer events to the game.
+  const stylus = { on: false, x: 0.5, y: 0.5, down: false, keys: {} };
+  const cursor = $('stylusCursor');
+  // The canvas element fills the window; the DS picture is letterboxed inside it. Find the picture, then its touch half.
+  function bottomRect() {
+    const cv = E().canvas, r = cv.getBoundingClientRect();
+    const aspect = (cv.width && cv.height) ? cv.width / cv.height : 256 / 384;
+    let w = r.width, h = r.height;
+    if (w / h > aspect) w = h * aspect; else h = w / aspect;
+    const left = r.left + (r.width - w) / 2, topY = r.top + (r.height - h) / 2;
+    return { left, top: top ? topY + h / 2 : topY, width: w, height: h / 2 };
+  }
+  window.__arcadeStylus = stylus;
+  function stylusPoint() { const r = bottomRect(); return { x: r.left + stylus.x * r.width, y: r.top + stylus.y * r.height }; }
+  function placeCursor() { const p = stylusPoint(); cursor.style.left = p.x + 'px'; cursor.style.top = p.y + 'px'; cursor.classList.toggle('down', stylus.down); }
+  function send(type) {
+    const p = stylusPoint(), c = E().canvas;
+    c.dispatchEvent(new MouseEvent(type, { clientX: p.x, clientY: p.y, screenX: p.x, screenY: p.y, bubbles: true, cancelable: true, button: 0, buttons: type === 'mouseup' ? 0 : 1 }));
+  }
+  function press(down) { if (!stylus.on || stylus.down === down) return; stylus.down = down; send(down ? 'mousedown' : 'mouseup'); placeCursor(); }
+  function setStylus(on) {
+    stylus.on = on; cursor.hidden = !on; $('stylusHint').hidden = !on;
+    if (on) { placeCursor(); toast('Virtual stylus: move it with the right stick or I J K L, tap with the right trigger or Space.', null, null, 6000); } else press(false);
+  }
+  $('stylusBtn').onclick = () => { closeQuick(); setStylus(!stylus.on); };
+  function setupStylus() {
+    let last = performance.now();
+    const KEYS = { KeyI: [0, -1], KeyK: [0, 1], KeyJ: [-1, 0], KeyL: [1, 0] };
+    document.addEventListener('keydown', e => {
+      if (!stylus.on || menuOpen) return;
+      if (KEYS[e.code]) { stylus.keys[e.code] = true; e.stopPropagation(); e.preventDefault(); }
+      else if (e.code === 'Space') { stylus.keys.Space = true; press(true); e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    document.addEventListener('keyup', e => {
+      if (!stylus.on) return;
+      if (KEYS[e.code]) { stylus.keys[e.code] = false; e.stopPropagation(); }
+      else if (e.code === 'Space') { stylus.keys.Space = false; press(false); e.stopPropagation(); }
+    }, true);
+    (function tick(now) {
+      requestAnimationFrame(tick);
+      if (!stylus.on || menuOpen) return;
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      let dx = 0, dy = 0;
+      for (const k in KEYS) if (stylus.keys[k]) { dx += KEYS[k][0]; dy += KEYS[k][1]; }
+      let trigger = false;
+      for (const gp of (navigator.getGamepads ? navigator.getGamepads() : [])) {
+        if (!gp) continue;
+        const ax = gp.axes || [];
+        if (Math.abs(ax[2] || 0) > 0.2) dx += ax[2]; if (Math.abs(ax[3] || 0) > 0.2) dy += ax[3];
+        if ((gp.buttons[7] && gp.buttons[7].pressed) || (gp.buttons[11] && gp.buttons[11].pressed)) trigger = true;
+      }
+      if (dx || dy) {
+        stylus.x = Math.min(1, Math.max(0, stylus.x + dx * dt * 0.9 * 0.75));
+        stylus.y = Math.min(1, Math.max(0, stylus.y + dy * dt * 0.9));
+        placeCursor(); if (stylus.down) send('mousemove');
+      }
+      if (trigger !== stylus.down && (trigger || !stylus.keys.Space)) press(trigger);
+    })(last);
+    window.addEventListener('resize', () => stylus.on && placeCursor());
   }
 
-  // ---- wire up ----
-  $('exit').onclick = exitToMenu;
-  $('saveNow').onclick = async () => { await snapshot(); toast('Saved.', null, null, 2500); };
-  $('back').onclick = goBack;
-  $('historyClose').onclick = () => $('historyDlg').close();
-  setInterval(checkSram, 2000);
-  setInterval(snapshot, 30000);
+  // ---------- phones ----------
+  function setupTouch() {
+    document.addEventListener('touchstart', e => { if (e.target.closest('[class*="ejs_virtualGamepad"], [class*="ejs_dpad"]') && navigator.vibrate) navigator.vibrate(8); }, { passive: true });
+    // Go full screen in the right orientation on the first touch (browsers only allow it from a gesture).
+    let done = false;
+    document.addEventListener('touchend', () => {
+      if (done || menuOpen) return; done = true;
+      try { document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation.lock(isDS ? 'portrait' : 'landscape')).catch(() => {}); } catch {}
+    }, { passive: true, once: false });
+  }
+
+  // ---------- playtime ----------
+  setInterval(() => { if (ready && !menuOpen && !document.hidden && backend.addPlaytime) backend.addPlaytime(1).catch(() => {}); }, 60000);
+
+  // ---------- wire up ----------
+  $('menuBtn').onclick = openQuick;
+  $('saveNow').onclick = async () => { if (await snapshot()) toast('Saved.', null, null, 2500); };
+  const bare = new URLSearchParams(location.search).has('bare');   // troubleshooting: no timers, no extras
+  if (!bare) setInterval(checkSram, 2000);
+  if (!bare) setInterval(() => { if (!menuOpen) snapshot(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) snapshot(); });
   window.addEventListener('pagehide', () => { if (ready) snapshot(); });
   history.pushState({ playing: true }, '');
   window.addEventListener('popstate', exitToMenu);
-  // Loading watchdog: a black screen with no explanation is the worst outcome.
+  ArcadeNav.configure({ enabled: () => menuOpen, onBack: closeQuick, onMenu: () => menuOpen ? closeQuick() : openQuick() });
   setTimeout(() => { if (!started) { setStatus(''); toast('This game is taking too long to load. Check the game file, or try again online.', 'Back to menu', () => location.replace(backend.menuUrl), 0); } }, 90000);
 
-  const isTouch = matchMedia('(pointer: coarse)').matches;
-  if (game.system === 'nds') {
-    window.EJS_defaultOptions = { melonds_touch_mode: isTouch ? 'Touch' : 'Mouse', melonds_screen_layout: 'Top/Bottom' };
-    const stylus = $('stylus'), swap = $('swap');
-    stylus.hidden = !isTouch; swap.hidden = false;
-    let pad = true;
-    stylus.onclick = () => { pad = !pad; window.EJS_emulator.toggleVirtualGamepad(pad); stylus.textContent = pad ? 'Stylus' : 'Buttons'; };
-    let top = true;
-    swap.onclick = () => { top = !top; try { window.EJS_emulator.changeSettingOption('melonds_screen_layout', top ? 'Top/Bottom' : 'Bottom/Top'); } catch (e) { console.warn(e); } };
+  if (isDS) {
+    if (!new URLSearchParams(location.search).has('nodef')) window.EJS_defaultOptions = { melonds_touch_mode: 'Touch', melonds_screen_layout: 'Top/Bottom' };
+    $('stylus').hidden = !isTouch; $('swap').hidden = false; $('swapBtn').hidden = false; $('stylusBtn').hidden = false;
     if (!isTouch) $('dsHint').hidden = false;
   }
 

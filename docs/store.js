@@ -142,6 +142,24 @@ const Store = {
     });
   },
 
+  // Whole-saves backup as plain JSON (bytes base64), and the reverse.
+  async exportSaves() {
+    const d = await db(); const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+    return new Promise(res => {
+      const out = [], r = d.transaction('saves').objectStore('saves').openCursor();
+      r.onsuccess = () => { const c = r.result; if (!c) return res({ arcade: 1, saves: out }); out.push({ key: c.key, at: c.value.at, data: b64(c.value.bytes) }); c.continue(); };
+    });
+  },
+  async importSaves(obj) {
+    if (!obj || obj.arcade !== 1 || !Array.isArray(obj.saves)) throw new Error('bad file');
+    let n = 0;
+    for (const s of obj.saves) {
+      const bin = atob(s.data), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const cur = await get('saves', s.key);
+      if (!cur || cur.at < s.at) { await put('saves', { at: s.at, bytes }, s.key); n++; }
+    }
+    return n;
+  },
   async usage() { const e = await navigator.storage.estimate(); return { used: e.usage || 0, quota: e.quota || 0 }; },
   persist: () => navigator.storage.persist ? navigator.storage.persist() : Promise.resolve(false),
 };

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Retro Arcade</title>
+<link rel="icon" href="/icon-192.png">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -12,12 +13,13 @@
 <dialog id="userDlg">
   <form method="dialog" id="userForm">
     <h3 id="userDlgTitle" style="margin-top:0">New player</h3>
-    <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required>
+    <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required data-nav>
     <div class="colors" id="userColors"></div>
+    <label class="check"><input type="checkbox" id="userKid" data-nav> Kid mode (bigger tiles, hidden games stay hidden)</label>
     <div class="btns">
-      <button type="button" class="btn danger" id="userDelete" hidden>Remove</button>
-      <button type="button" class="btn" id="userCancel">Cancel</button>
-      <button type="submit" class="btn primary">Save</button>
+      <button type="button" class="btn danger" id="userDelete" hidden data-nav>Remove</button>
+      <button type="button" class="btn" id="userCancel" data-cancel data-nav>Cancel</button>
+      <button type="submit" class="btn primary" data-nav>Save</button>
     </div>
   </form>
 </dialog>
@@ -26,16 +28,48 @@
   <form method="dialog" id="syncForm">
     <h3 style="margin-top:0">Family saves</h3>
     <p class="muted" id="syncStatus" style="margin-top:0"></p>
-    <input type="text" id="syncCode" placeholder="Family code" autocomplete="off">
+    <input type="text" id="syncCode" placeholder="Family code" autocomplete="off" data-nav>
+    <div class="btns" id="syncExtras" style="justify-content:flex-start"></div>
     <div class="btns">
-      <button type="button" class="btn danger" id="syncDisconnect" hidden>Disconnect</button>
-      <button type="button" class="btn" id="syncCancel">Cancel</button>
-      <button type="submit" class="btn primary">Connect</button>
+      <button type="button" class="btn danger" id="syncDisconnect" hidden data-nav>Disconnect</button>
+      <button type="button" class="btn" id="syncCancel" data-cancel data-nav>Close</button>
+      <button type="submit" class="btn primary" data-nav>Connect</button>
     </div>
   </form>
 </dialog>
 
+<dialog id="popDlg">
+  <h3 id="popTitle" style="margin-top:0"></h3>
+  <div id="popList" class="histList"></div>
+  <div class="btns"><button type="button" class="btn" id="popCancel" data-cancel data-nav>Cancel</button></div>
+</dialog>
+
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
-<script src="/app.js"></script>
+<script src="/nav.js"></script>
+<script src="/menu.js"></script>
+<script>
+// Computer arcade: everything goes through the local server, which keeps the family store in step.
+const json = async (url, opts) => (await fetch(url, opts)).json();
+let syncState = { available: false, connected: false };
+const backend = {
+  users: async () => { try { syncState = await json('/api/sync'); } catch {} return json('/api/users'); },
+  saveUsers: list => fetch('/api/users', { method: 'POST', body: JSON.stringify(list) }),
+  games: async () => (await json('/api/library')).games || [],
+  recent: async u => (await json('/api/recent?user=' + encodeURIComponent(u))).recent || [],
+  play(g, user) {
+    const qs = 'game=' + encodeURIComponent(g.id) + '&user=' + encodeURIComponent(user.id);
+    if (!g.native) { location.href = '/play.html?' + qs; return; }
+    json('/api/launch?' + qs, { method: 'POST' }).then(r => { if (!r.ok) menu.toast(r.error || 'Could not open the game.'); }).catch(() => menu.toast('Could not open the game.'));
+  },
+  sync: {
+    get available() { return syncState.available; },
+    connected: () => syncState.connected,
+    connect: code => json('/api/sync', { method: 'POST', body: JSON.stringify({ code }) }),
+    disconnect: () => json('/api/sync', { method: 'POST', body: JSON.stringify({ code: '' }) }),
+  },
+};
+const menu = ArcadeMenu(backend);
+menu.route();
+</script>
 </body>
 </html>

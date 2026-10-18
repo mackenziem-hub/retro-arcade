@@ -13,16 +13,18 @@
 <body>
 <div class="wrap" id="app"></div>
 <input type="file" id="picker" multiple hidden>
+<input type="file" id="restorePicker" accept=".json" hidden>
 
 <dialog id="userDlg">
   <form method="dialog" id="userForm">
     <h3 id="userDlgTitle" style="margin-top:0">New player</h3>
-    <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required>
+    <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required data-nav>
     <div class="colors" id="userColors"></div>
+    <label class="check"><input type="checkbox" id="userKid" data-nav> Kid mode (bigger tiles, hidden games stay hidden)</label>
     <div class="btns">
-      <button type="button" class="btn danger" id="userDelete" hidden>Remove</button>
-      <button type="button" class="btn" id="userCancel">Cancel</button>
-      <button type="submit" class="btn primary">Save</button>
+      <button type="button" class="btn danger" id="userDelete" hidden data-nav>Remove</button>
+      <button type="button" class="btn" id="userCancel" data-cancel data-nav>Cancel</button>
+      <button type="submit" class="btn primary" data-nav>Save</button>
     </div>
   </form>
 </dialog>
@@ -30,14 +32,21 @@
 <dialog id="syncDlg">
   <form method="dialog" id="syncForm">
     <h3 style="margin-top:0">Family saves</h3>
-    <p class="hint" id="syncStatus" style="text-align:left;margin-top:0"></p>
-    <input type="text" id="syncCode" placeholder="Family code" autocomplete="off" autocapitalize="off">
+    <p class="muted" id="syncStatus" style="margin-top:0"></p>
+    <input type="text" id="syncCode" placeholder="Family code" autocomplete="off" autocapitalize="off" data-nav>
+    <div class="btns" id="syncExtras" style="justify-content:flex-start;flex-wrap:wrap"></div>
     <div class="btns">
-      <button type="button" class="btn danger" id="syncDisconnect" hidden>Disconnect</button>
-      <button type="button" class="btn" id="syncCancel">Cancel</button>
-      <button type="submit" class="btn primary">Connect</button>
+      <button type="button" class="btn danger" id="syncDisconnect" hidden data-nav>Disconnect</button>
+      <button type="button" class="btn" id="syncCancel" data-cancel data-nav>Close</button>
+      <button type="submit" class="btn primary" data-nav>Connect</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="popDlg">
+  <h3 id="popTitle" style="margin-top:0"></h3>
+  <div id="popList" class="histList"></div>
+  <div class="btns"><button type="button" class="btn" id="popCancel" data-cancel data-nav>Cancel</button></div>
 </dialog>
 
 <dialog id="importDlg">
@@ -46,8 +55,8 @@
   <div id="importList"></div>
   <div class="progress"><div id="importBar"></div></div>
   <div class="btns">
-    <button type="button" class="btn" id="importCancel">Cancel</button>
-    <button type="button" class="btn primary" id="importGo">Add</button>
+    <button type="button" class="btn" id="importCancel" data-cancel data-nav>Cancel</button>
+    <button type="button" class="btn primary" id="importGo" data-nav>Add</button>
   </div>
 </dialog>
 
@@ -55,6 +64,8 @@
 <script src="config.js"></script>
 <script src="store.js"></script>
 <script src="sync.js"></script>
+<script src="nav.js"></script>
+<script src="menu.js"></script>
 <script src="phone.js"></script>
 </body>
 </html>

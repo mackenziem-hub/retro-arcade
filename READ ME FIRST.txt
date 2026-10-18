@@ -24,13 +24,24 @@ FAMILY SAVES (saves follow you between devices)
 
 PLAYERS
   - Add a player with the + button on the "Who's playing?" screen.
-  - Right-click a player to rename them, change their colour or remove them.
+  - Right-click (or press and hold) a player to rename them, change their colour,
+    turn on Kid mode, or remove them.
+  - Kid mode: bigger tiles, no settings, and any game marked "Hide from kid profiles"
+    stays hidden. Mark games from a grown-up profile: right-click a game.
+  - Right-click a game to add it to Favourites (they get their own row at the top).
 
 CONTROLS
-  - Controllers work automatically (one per player for multiplayer games).
-  - Keyboard and remapping: open the game menu at the bottom of the game screen
+  - Controllers work automatically (one per player for multiplayer games), and the
+    menus can be driven with the controller too: d-pad to move, A to pick, B to go back.
+  - In a game, press Esc, the Menu button, or Select+Start on the controller for the
+    game menu: three manual save slots, Go back, screenshot, fast forward, and for DS
+    games Swap screens and the Virtual stylus.
+  - Keyboard and remapping: open the emulator's own menu at the bottom of the game screen
     and choose Controls.
-  - On the DS games, click or tap the bottom screen to use the touch screen.
+  - DS games: click or tap the bottom screen to use the touch screen. No touch screen?
+    Turn on the Virtual stylus in the game menu: a cursor appears on the touch screen;
+    move it with the right stick or the I J K L keys, tap or hold with the right trigger
+    or the Space bar.
 
 ADDING GAMES
   Put game files in the matching folder inside "games"

@@ -80,9 +80,45 @@ body.play { overflow: hidden; }
 .hist { text-align: left; background: var(--panel-2); border: 0; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; gap: 10px; }
 .hist small { color: var(--muted); }
 .hud .btn { padding: 8px 12px; font-size: 14px; }
+.hud { flex-wrap: wrap; max-width: calc(100vw - 20px); }
+
+/* Controller / keyboard focus */
+body.gp [data-nav]:focus { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+.card:focus-visible, body.gp .card:focus { transform: translateY(-3px); border-color: var(--accent-2); }
+
+/* Library extras */
+.sel { background: var(--panel); border: 1px solid var(--panel-2); border-radius: 999px; padding: 8px 14px; color: var(--text); }
+.cover { position: relative; }
+.star { position: absolute; top: 6px; left: 8px; color: var(--accent-2); font-size: 20px; text-shadow: 0 1px 3px #000; }
+.new { position: absolute; top: 8px; right: 8px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; letter-spacing: .5px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin: 4px 0 2px; }
+.check input { width: 18px; height: 18px; }
+.welcome { text-align: center; margin-top: 14vh; }
+.welcome h1 { font-size: 40px; margin-bottom: 6px; }
+.welcome h1 span { color: var(--accent); }
+.welcome .bar { max-width: 420px; margin: 24px auto 0; }
+body.kid .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 22px; }
+body.kid .card .t { font-size: 17px; }
+body.kid .tabs .tab, body.kid .chip { font-size: 16px; padding: 10px 18px; }
+
+/* Quick menu in a game */
+.quick { width: min(520px, calc(100vw - 32px)); }
+.qgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.qgrid .btn { text-align: left; }
+.slots { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.slot { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+.slot > span { flex: 1; font-size: 14px; }
+.slot small { display: block; color: var(--muted); font-size: 12px; }
+.slot .btn { padding: 6px 12px; font-size: 13px; background: var(--panel); }
+.stylusCursor { position: fixed; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 3px solid var(--accent-2); border-radius: 50%; box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #000; pointer-events: none; z-index: 9999; }
+.stylusCursor::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: var(--accent-2); border-radius: 50%; }
+.stylusCursor.down { background: rgba(255, 193, 69, .35); transform: scale(.85); }
 
 @media (max-width: 600px) {
   header.top h1 { font-size: 20px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
   .profile .avatar { width: 84px; height: 84px; font-size: 34px; }
 }
+
+.tapToPlay { position: fixed; inset: 0; z-index: 9998; display: grid; place-items: center; background: rgba(0,0,0,.45); cursor: pointer; }
+.tapToPlay div { background: var(--accent); color: #fff; font-weight: 700; font-size: 22px; padding: 16px 32px; border-radius: 999px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }

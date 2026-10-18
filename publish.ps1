@@ -20,7 +20,7 @@ $list = foreach ($f in $files) {
 }
 # The phone web app (docs/, served by GitHub Pages) shares the computer arcade's look.
 Copy-Item "$Src\app\web\style.css" (Join-Path $Repo 'docs\style.css') -Force
-Copy-Item "$Src\app\web\player.js" (Join-Path $Repo 'docs\player.js') -Force
+foreach ($shared in 'player.js', 'nav.js', 'menu.js') { Copy-Item "$Src\app\web\$shared" (Join-Path $Repo "docs\$shared") -Force }
 $version = Get-Date -Format 'yyyy.MM.dd.HHmm'
 [IO.File]::WriteAllText((Join-Path $Repo 'manifest.json'), (ConvertTo-Json ([ordered]@{ version = $version; files = @($list) }) -Depth 4))
 # The publishing machine is already current.

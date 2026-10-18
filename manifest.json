@@ -1,33 +1,37 @@
 {
-    "version":  "2026.10.18.2021",
+    "version":  "2026.10.18.2045",
     "files":  [
-                  {
-                      "path":  "app/web/app.js",
-                      "sha256":  "24F9E5A70A7456988593E4FD924359A48C970466047765E4CBC8AA63DD4A18F2"
-                  },
                   {
                       "path":  "app/web/icon-192.png",
                       "sha256":  "934A925A98D00E72E6E4FE28292905AE278D6118A135D3C52BB27002AF9D0539"
                   },
                   {
                       "path":  "app/web/index.html",
-                      "sha256":  "201BFFC9DC3E131C05F81680C468BB80DF0724C29AB205EBC99236323ED8AA2B"
+                      "sha256":  "1D2941BC9E01BA2789CB62FA117764D96DC5A46C871F8F8B6ADD85277AA76E98"
+                  },
+                  {
+                      "path":  "app/web/menu.js",
+                      "sha256":  "DF96B391C4ABB316475A901C0E563D0F38B495AB7C74A2E27B78427028E4A3A0"
+                  },
+                  {
+                      "path":  "app/web/nav.js",
+                      "sha256":  "5966556A712565991A4BD73FEF7A7C1E525B770E136F932E8DBC2D7112D7D623"
                   },
                   {
                       "path":  "app/web/play.html",
-                      "sha256":  "409180EC4502430B8FC8043F82350268E16FE6ED7DC75AC4A7E1366A233D4595"
+                      "sha256":  "1417751C1D36F741B5CDDA5EE81F121317A19F7813C7D3A7834B3758FF22A4B3"
                   },
                   {
                       "path":  "app/web/player.js",
-                      "sha256":  "6BF0FAC1B2450DCB5256548ED96A4B7929AC65E8051ADCCF495D80596D3C6B89"
+                      "sha256":  "39052604C3F33B3B558E74E776148245E1AF310581781CAEEFD7962565DE918D"
                   },
                   {
                       "path":  "app/web/style.css",
-                      "sha256":  "F6DE3399E726E0AA40E929BC1741BA054088081DE75097ED590E54AA2E743AE8"
+                      "sha256":  "880EF8AD46B94CC234A9A28EC48B432983C449EA01670A09DAF73A8C2292DBF1"
                   },
                   {
                       "path":  "app/server.ps1",
-                      "sha256":  "5D1915A7FB5662D2533141E1FFE3308478FF2A884DF4E85291B47B789CE8135E"
+                      "sha256":  "01BB4BB382AEBE518513D37BB8754DE768535375E1454F589C45C5BDD9C0D55F"
                   },
                   {
                       "path":  "app/updater.ps1",
@@ -39,11 +43,11 @@
                   },
                   {
                       "path":  "READ ME FIRST.txt",
-                      "sha256":  "88AED058B6FB2BCEA79844F54BA06066B7DAF5FA908EB6B8322D4901976E9B8F"
+                      "sha256":  "FAEFB51564337D02206D4E08327837BFDFFE18631915D9C053CA900CD92EAD17"
                   },
                   {
                       "path":  "PHONE SETUP (Android).txt",
-                      "sha256":  "BED433169DAAE2DC03624CA3777D5833B666E511F80E433EDE1C7D6F1AA2661C"
+                      "sha256":  "E2FD424CDEE3DF35D58FAEA7821D5F37CCD334C1F38764501FBC28415DBB56E1"
                   },
                   {
                       "path":  "Copy to Drive.ps1",

@@ -10,25 +10,42 @@
 </head>
 <body class="play">
 <div class="hud">
-  <button class="btn" id="exit">&larr; Menu</button>
+  <button class="btn" id="menuBtn">&#9776;</button>
   <button class="btn" id="saveNow">Save</button>
-  <button class="btn" id="back" title="Load an earlier snapshot">Go back</button>
   <button class="btn" id="stylus" hidden>Stylus</button>
   <button class="btn" id="swap" hidden>Swap</button>
-  <span id="status" style="font-size:13px;color:var(--muted)"></span>
-  <span id="dsHint" class="muted" hidden>Click the bottom screen to use the stylus</span>
+  <span id="status" class="muted"></span>
+  <span id="dsHint" class="muted" hidden>Click the bottom screen to use the stylus, or turn on the virtual stylus in the menu</span>
+  <span id="stylusHint" class="muted" hidden>Stylus: right stick or I J K L, tap with right trigger or Space</span>
 </div>
 <div id="game"></div>
+<div id="stylusCursor" class="stylusCursor" hidden></div>
+<div id="tapToPlay" class="tapToPlay" hidden><div>Tap to play</div></div>
+
+<dialog id="quickDlg" class="quick">
+  <h3 style="margin-top:0">Game menu</h3>
+  <div class="qgrid">
+    <button type="button" class="btn primary" id="quickResume" data-nav>Resume</button>
+    <button type="button" class="btn" id="quickBack" data-nav>Go back to an earlier moment</button>
+    <button type="button" class="btn" id="shotBtn" data-nav>Screenshot</button>
+    <button type="button" class="btn" id="ffBtn" data-nav>Fast forward</button>
+    <button type="button" class="btn" id="swapBtn" hidden data-nav>Swap DS screens</button>
+    <button type="button" class="btn" id="stylusBtn" hidden data-nav>Virtual stylus</button>
+  </div>
+  <div id="quickSlots" class="slots"></div>
+  <div class="btns"><button type="button" class="btn danger" id="quickExit" data-nav>Back to arcade menu</button></div>
+</dialog>
 <dialog id="historyDlg">
   <h3 style="margin-top:0">Go back to an earlier moment</h3>
   <div id="historyList" class="histList"></div>
-  <div class="btns"><button type="button" class="btn" id="historyClose">Cancel</button></div>
+  <div class="btns"><button type="button" class="btn" id="historyClose" data-cancel data-nav>Cancel</button></div>
 </dialog>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
 
 <script src="config.js"></script>
 <script src="store.js"></script>
 <script src="sync.js"></script>
+<script src="nav.js"></script>
 <script src="player.js"></script>
 <script>
 // Phone: the game file and saves live on this phone; saves also go to the family store when connected.
@@ -39,15 +56,17 @@
   const g = await Store.game(gameId);
   if (!g) { document.getElementById('game').innerHTML = '<p style="padding:80px 20px">Game not found on this phone.</p>'; return; }
   const file = await Store.gameFile(g.id);
+  const getSave = async kind => {
+    const local = await Store.getSave(userId, gameId, kind);
+    let remote = null;
+    try { remote = await Sync.fetchNewer(userId, gameId, kind, local && local.at); } catch (e) { console.warn('cloud check failed', e); }
+    if (remote) { await Store.putSave(userId, gameId, kind, remote.bytes, remote.at); return { ...remote, fromCloud: true }; }
+    return local;
+  };
   ArcadePlayer({
     game: g, menuUrl: './#lib', dataPath: Store.EJS_DATA, gameUrl: URL.createObjectURL(file),
-    async getSave(kind) {
-      const local = await Store.getSave(userId, gameId, kind);
-      let remote = null;
-      try { remote = await Sync.fetchNewer(userId, gameId, kind, local && local.at); } catch (e) { console.warn('cloud check failed', e); }
-      if (remote) { await Store.putSave(userId, gameId, kind, remote.bytes, remote.at); return { ...remote, fromCloud: true }; }
-      return local;
-    },
+    getSave,
+    peekSave: async kind => { const s = await Store.getSave(userId, gameId, kind); return s ? { at: s.at } : null; },
     async putSave(kind, bytes, at) { await Store.putSave(userId, gameId, kind, bytes, at); Sync.upload(userId, gameId, kind, bytes, at); },
     async history() {
       const local = (await Store.snapshots(userId, gameId)).map(s => ({ id: 'local:' + s.slot, label: 'On this phone', at: s.at }));
@@ -58,6 +77,14 @@
     async historyBytes(id) {
       const [where, key] = id.split(':');
       return where === 'local' ? Store.snapshot(userId, gameId, key) : Sync.historyBytes(key);
+    },
+    async addPlaytime(mins) {
+      const users = await Store.users();
+      const u = users.find(x => x.id === userId); if (!u) return;
+      u.play = u.play || {}; u.play[gameId] = (u.play[gameId] || 0) + mins;
+      const at = Date.now();
+      await Store.replaceUsers(users, at); await Store.meta.set('profilesDirty', true);
+      if (Sync.ready()) { try { await Sync.pushProfiles(users, at); await Store.meta.set('profilesDirty', false); } catch {} }
     },
   });
 })();

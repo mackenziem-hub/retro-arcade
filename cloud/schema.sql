@@ -76,3 +76,7 @@ create policy family_profiles on arcade_profiles for all to anon, authenticated
 create or replace view arcade_recent as
   select family, player, game, max(updated_at) as updated_at from arcade_saves group by family, player, game;
 grant select on arcade_recent to anon, authenticated;
+
+-- 2026-10-18: manual save slots.
+alter table arcade_saves drop constraint if exists arcade_saves_kind_check;
+alter table arcade_saves add constraint arcade_saves_kind_check check (kind in ('sram', 'state', 'slot1', 'slot2', 'slot3'));

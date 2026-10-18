@@ -157,7 +157,7 @@ $handler = {
         $have = @{}
         try { Cloud 'arcade_saves?select=player,game,kind,updated_at' 'GET' $null 20 | Where-Object { $_ } | ForEach-Object { $have["$($_.player)|$($_.game)|$($_.kind)"] = (FromIso $_.updated_at) } } catch { Log "backfill list failed: $($_.Exception.Message)"; return }
         $n = 0
-        foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.state' }) {
+        foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.state', '.slot1', '.slot2', '.slot3' }) {
             $user = $f.Directory.Name; $game = $f.BaseName; $kind = $f.Extension.TrimStart('.'); $at = Ms $f.FullName
             if ($have["$user|$game|$kind"] -and $have["$user|$game|$kind"] -ge ($at - 1000)) { continue }
             try { CloudUpload $user $game $kind ([IO.File]::ReadAllBytes($f.FullName)) $at; $n++ } catch { Log "backfill failed ($user $game $kind): $($_.Exception.Message)" }
@@ -182,7 +182,7 @@ $handler = {
                 $sys = $systems[$folder]; $ok = $exts[$sys] -split ' '
                 Get-ChildItem $dir -Recurse -File | Where-Object { $ok -contains $_.Extension.ToLower() } | ForEach-Object {
                     $rel = $_.FullName.Substring($S.Games.Length).TrimStart('\') -replace '\\', '/'
-                    $list += (Entry ([IO.Path]::GetFileNameWithoutExtension($_.Name) -replace '\.nkit$', '') $sys $folder $_.FullName $rel $_.Length)
+                    $list += (Entry ([IO.Path]::GetFileNameWithoutExtension($_.Name) -replace '\.nkit$', '') $sys $folder $_.FullName $rel $_.Length ([DateTimeOffset]$_.CreationTimeUtc).ToUnixTimeMilliseconds())
                 }
             }
             $titles = Join-Path $Emu 'Azahar\user\sdmc\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000'
@@ -192,18 +192,18 @@ $handler = {
                     if (-not $boot) { return }
                     $name = if ($ctrTitles[$_.Name]) { $ctrTitles[$_.Name] } else { "3DS game $($_.Name)" }
                     if ($list | Where-Object { $_.id -eq (SafeName $name) }) { return }
-                    $list += (Entry $name '3ds' 'Nintendo 3DS' $boot.FullName $null $boot.Length)
+                    $list += (Entry $name '3ds' 'Nintendo 3DS' $boot.FullName $null $boot.Length 0)
                 }
             }
             $list
         }
-        function Entry($title, $sys, $folder, $full, $rel, $len) {
+        function Entry($title, $sys, $folder, $full, $rel, $len, $added) {
             $cover = Join-Path $S.Covers ((SafeName $title) + '.png')
             [ordered]@{
                 id = SafeName $title; title = $title; system = $sys; folder = $folder; native = [bool]$native[$sys]; path = $full
                 url = if ($rel) { '/games/' + (($rel -split '/' | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/') } else { $null }
                 cover = if (Test-Path $cover) { '/covers/' + [Uri]::EscapeDataString((SafeName $title) + '.png') } else { $null }
-                mb = [math]::Round($len / 1MB)
+                mb = [math]::Round($len / 1MB); added = $added
             }
         }
 
@@ -260,7 +260,7 @@ $handler = {
             # kind: sram (in-game save), state (snapshot). Local first, family store second.
             $res.AddHeader('Cache-Control', 'no-store')
             $user = SafeName $q['user']; $game = SafeName $q['game']; $kind = $q['kind']
-            if (-not $user -or -not $game -or @('sram', 'state') -notcontains $kind) { Send 400 $null; return }
+            if (-not $user -or -not $game -or @('sram', 'state', 'slot1', 'slot2', 'slot3') -notcontains $kind) { Send 400 $null; return }
             $file = Join-Path (Join-Path $S.Saves $user) "$game.$kind"
             if ($req.HttpMethod -eq 'POST') {
                 $data = ReadBody
@@ -287,7 +287,7 @@ $handler = {
                 }
                 if (Test-Path $file) {
                     $res.AddHeader('X-Saved-At', (Ms $file)); if ($fromCloud) { $res.AddHeader('X-From-Cloud', '1') }
-                    SendFile $file
+                    if ($q['peek']) { Send 200 $null } else { SendFile $file }
                 } else { Send 404 $null }
             }
         }

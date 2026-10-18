@@ -36,7 +36,9 @@ updates itself when it is online.
 
 GOOD TO KNOW
    - DS games: tap "Stylus" to hide the buttons and use the touch screen, "Swap" to flip the screens.
-   - "Go back" returns to an earlier snapshot if something went wrong.
+   - The menu button (three lines) in a game has save slots, Go back, screenshot and fast forward.
+   - Press and hold a player for Kid mode; press and hold a game for Favourites.
+   - Family saves dialog (cloud button): back up all saves to a file, or restore from one.
    - Press and hold a game to remove it; its saves are kept.
    - Do not clear Chrome's site data for the arcade, that erases its games and saves.
    - GameCube, PS2 and 3DS games are computer only.
