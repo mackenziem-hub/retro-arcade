@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.18.1937",
+    "version":  "2026.10.18.1938",
     "files":  [
                   {
                       "path":  "app/web/app.js",
@@ -39,7 +39,7 @@
                   },
                   {
                       "path":  "PHONE SETUP (Android).txt",
-                      "sha256":  "BC8B9C37A0DECFA7EA7EC0CEFF972A7E577D5A2BEF791A90806BE48D2CD7CFBE"
+                      "sha256":  "D77582B9E750063977D0C80003A8BA7413F8B826258A740BF1C060AE1E0ABD12"
                   },
                   {
                       "path":  "Copy to Drive.ps1",

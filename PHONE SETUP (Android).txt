@@ -1,31 +1,42 @@
 RETRO ARCADE ON AN ANDROID PHONE
 ================================
 
-The phone uses Lemuroid, a free all-in-one game app: box art library,
-auto-save, touch controls, and Bluetooth controllers. It works offline.
+The phone arcade works like the computer one: players, box art, auto-save,
+touch controls, Bluetooth controllers. It works offline once set up and
+updates itself when it is online.
 
-1. INSTALL LEMUROID
-   Play Store: search "Lemuroid" (by Swordfish90), or get it from F-Droid.
+1. OPEN THE ARCADE
+   In Chrome on the phone, go to:
+       https://mackenziem-hub.github.io/retro-arcade/
+   Tap the Chrome menu (three dots) > "Add to Home screen" > Install.
+   From now on, open it from the Arcade icon.
 
-2. COPY THE GAMES TO THE PHONE (about 4.7 GB)
+2. COPY THE GAMES TO THE PHONE
    a. Plug the phone into the computer with its USB cable.
       On the phone, tap the USB notification and choose "File transfer".
-   b. On the phone's storage, make a folder called  Games
-   c. From this arcade's "games" folder, copy these folders into it:
+   b. From this arcade's "games" folder, copy the folders you want
+      to the phone's Download folder:
         Game Boy, Game Boy Color, Game Boy Advance, NES, SNES,
         Nintendo 64, Nintendo DS, PlayStation
-      Tight on space? Skip PlayStation (2.9 GB) and copy just the games you want.
+      (about 4.7 GB in all; PlayStation alone is 2.9 GB)
 
-3. POINT LEMUROID AT THE GAMES
-   Open Lemuroid, and when it asks for a folder, pick the  Games  folder.
-   It finds every game and adds the box art by itself.
+3. ADD THEM TO THE ARCADE
+   Open the Arcade, pick your player, tap "+ Add games",
+   then select the game files (you can select several at once).
+   Check the system shown next to each one and tap Add.
+   After they are added you can delete the copies in Download to free space.
 
-SAVING
-   Lemuroid auto-saves when you leave a game and resumes where you stopped.
-   Phone saves stay on the phone. They do not sync with the computer arcade.
+4. PLAY ONCE WHILE ONLINE
+   The first time you play each kind of system, its emulator downloads.
+   After that it works with no internet.
 
-OPTIONAL
-   GameCube games: install "Dolphin Emulator" from the Play Store and copy the
-     "GameCube & Wii" folder too (9.6 GB). Needs a recent, powerful phone.
+GOOD TO KNOW
+   - Saves stay on the phone (they do not sync with the computer).
+   - Press and hold a game to remove it; its saves are kept.
+   - Do not clear Chrome's site data for the arcade, that erases its games and saves.
+   - GameCube, PS2 and 3DS games are computer only.
+
+OTHER OPTIONS
    Pokemon online (PokeMMO): install Extras\PokeMMO-Client.apk
      (allow "install unknown apps" when asked).
+   Prefer a regular app? "Lemuroid" on the Play Store also plays these games.
