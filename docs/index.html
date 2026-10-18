@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1020">
+<title>Retro Arcade</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="phone.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<input type="file" id="picker" multiple hidden>
+
+<dialog id="userDlg">
+  <form method="dialog" id="userForm">
+    <h3 id="userDlgTitle" style="margin-top:0">New player</h3>
+    <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required>
+    <div class="colors" id="userColors"></div>
+    <div class="btns">
+      <button type="button" class="btn danger" id="userDelete" hidden>Remove</button>
+      <button type="button" class="btn" id="userCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="importDlg">
+  <h3 style="margin-top:0">Add games</h3>
+  <p class="hint" style="margin-top:0">Check the system for each game, then tap Add.</p>
+  <div id="importList"></div>
+  <div class="progress"><div id="importBar"></div></div>
+  <div class="btns">
+    <button type="button" class="btn" id="importCancel">Cancel</button>
+    <button type="button" class="btn primary" id="importGo">Add</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
+<script src="store.js"></script>
+<script src="phone.js"></script>
+</body>
+</html>

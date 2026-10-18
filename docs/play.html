@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Retro Arcade</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="play">
+<div class="hud">
+  <button class="btn" id="exit">&larr; Menu</button>
+  <button class="btn" id="saveNow">Save</button>
+  <span id="status" style="font-size:13px;color:var(--muted)"></span>
+</div>
+<div id="game"></div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
+
+<script src="store.js"></script>
+<script>
+// Same auto-save as the computer arcade: every 30 seconds, when the app goes to the background,
+// and on the way back to the menu. Saves go to this phone's storage; opening the game resumes it.
+const params = new URLSearchParams(location.search);
+const gameId = params.get('game'), userId = params.get('user');
+let ready = false, saving = false;
+const setStatus = t => { document.getElementById('status').textContent = t; };
+function toast(msg, actLabel, act, ms = 7000) {
+  const t = document.getElementById('toast'), b = document.getElementById('toastAct');
+  document.getElementById('toastMsg').textContent = msg;
+  b.hidden = !actLabel; b.textContent = actLabel || '';
+  b.onclick = () => { t.classList.remove('show'); act && act(); };
+  t.classList.add('show');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+async function restore() {
+  const gm = window.EJS_emulator.gameManager;
+  try {
+    const sram = await Store.getSave(userId, gameId, 'sram');
+    if (sram) {
+      const p = gm.getSaveFilePath(), dir = p.substring(0, p.lastIndexOf('/'));
+      try { gm.FS.mkdirTree ? gm.FS.mkdirTree(dir) : gm.FS.mkdir(dir); } catch {}
+      try { gm.FS.unlink(p); } catch {}
+      gm.FS.writeFile(p, sram.bytes);
+      gm.loadSaveFiles();
+    }
+    const state = gm.supportsStates() ? await Store.getSave(userId, gameId, 'state') : null;
+    if (state) {
+      gm.loadState(state.bytes);
+      toast('Picked up where you left off.', 'Start from the title screen instead', () => gm.restart());
+    }
+  } catch (e) { console.warn('restore failed', e); }
+  ready = true;
+  setStatus('Auto-save on');
+}
+
+async function autosave() {
+  if (!ready || saving) return;
+  saving = true;
+  try {
+    const gm = window.EJS_emulator.gameManager;
+    const sram = gm.getSaveFile();
+    if (sram && sram.length) await Store.putSave(userId, gameId, 'sram', sram.slice());
+    if (gm.supportsStates()) await Store.putSave(userId, gameId, 'state', gm.getState().slice());
+    setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+  } catch (e) { console.warn('autosave failed', e); setStatus('Save failed, will retry'); }
+  saving = false;
+}
+async function exitToMenu() { setStatus('Saving...'); await autosave(); location.replace('./#lib'); }
+
+document.getElementById('exit').onclick = exitToMenu;
+document.getElementById('saveNow').onclick = async () => { await autosave(); toast('Saved.', null, null, 2500); };
+setInterval(autosave, 30000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
+history.pushState({ playing: true }, '');
+window.addEventListener('popstate', exitToMenu);
+
+(async () => {
+  const g = await Store.game(gameId);
+  if (!g) { document.getElementById('game').innerHTML = '<p style="padding:80px 20px">Game not found on this phone.</p>'; return; }
+  document.title = g.title.replace(/\s*\([^)]*\)/g, '') + ' - Retro Arcade';
+  const file = await Store.gameFile(g.id);
+  window.EJS_player = '#game';
+  window.EJS_core = g.system;
+  window.EJS_gameUrl = URL.createObjectURL(file);
+  window.EJS_gameName = g.title;
+  window.EJS_pathtodata = Store.EJS_DATA;
+  window.EJS_startOnLoaded = true;
+  window.EJS_disableDatabases = true;   // the game is already stored on the phone
+  window.EJS_color = '#ff5d8f';
+  window.EJS_backgroundColor = '#000000';
+  window.EJS_onGameStart = restore;
+  const s = document.createElement('script');
+  s.src = Store.EJS_DATA + 'loader.js';
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

@@ -1,9 +1,13 @@
 {
-    "version":  "2026.10.18.1931",
+    "version":  "2026.10.18.1937",
     "files":  [
                   {
                       "path":  "app/web/app.js",
                       "sha256":  "808243B7ECE87E61AA0467D21E7626E87F075F008EF27D6944678C4791D65D03"
+                  },
+                  {
+                      "path":  "app/web/icon-192.png",
+                      "sha256":  "934A925A98D00E72E6E4FE28292905AE278D6118A135D3C52BB27002AF9D0539"
                   },
                   {
                       "path":  "app/web/index.html",

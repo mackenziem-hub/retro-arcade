@@ -1,0 +1,23 @@
+/* Phone additions on top of the shared arcade style.css */
+body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.bar { display: flex; gap: 10px; margin-bottom: 16px; }
+.bar .search { flex: 1; min-width: 0; }
+.hint { color: var(--muted); font-size: 13px; text-align: center; margin: 18px 0; }
+.empty p { margin: 8px 0; }
+.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { white-space: nowrap; }
+.cover .ph { font-size: 13px; }
+#importList { max-height: 50vh; overflow-y: auto; }
+.imp { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--panel-2); }
+.imp-name { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.imp-name small { display: block; color: var(--muted); font-size: 12px; }
+.imp select { background: var(--bg); color: var(--text); border: 1px solid var(--panel-2); border-radius: 8px; padding: 6px; max-width: 46%; }
+.progress { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 14px; overflow: hidden; }
+#importBar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.btn:disabled { opacity: .5; }
+@media (max-width: 600px) {
+  header.top { margin-bottom: 14px; }
+  .chip { padding-right: 10px; font-size: 14px; }
+  .chip .avatar { width: 30px; height: 30px; }
+}

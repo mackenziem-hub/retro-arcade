@@ -18,6 +18,8 @@ $list = foreach ($f in $files) {
     Copy-Item $from $to -Force
     [ordered]@{ path = $f; sha256 = ([BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($to))) -replace '-', '') }
 }
+# The phone web app (docs/, served by GitHub Pages) shares the computer arcade's look.
+Copy-Item "$Src\app\web\style.css" (Join-Path $Repo 'docs\style.css') -Force
 $version = Get-Date -Format 'yyyy.MM.dd.HHmm'
 [IO.File]::WriteAllText((Join-Path $Repo 'manifest.json'), (ConvertTo-Json ([ordered]@{ version = $version; files = @($list) }) -Depth 4))
 # The publishing machine is already current.
