@@ -12,88 +12,54 @@
 <div class="hud">
   <button class="btn" id="exit">&larr; Menu</button>
   <button class="btn" id="saveNow">Save</button>
+  <button class="btn" id="back" title="Load an earlier snapshot">Go back</button>
+  <button class="btn" id="stylus" hidden>Stylus</button>
+  <button class="btn" id="swap" hidden>Swap</button>
   <span id="status" style="font-size:13px;color:var(--muted)"></span>
+  <span id="dsHint" class="muted" hidden>Click the bottom screen to use the stylus</span>
 </div>
 <div id="game"></div>
+<dialog id="historyDlg">
+  <h3 style="margin-top:0">Go back to an earlier moment</h3>
+  <div id="historyList" class="histList"></div>
+  <div class="btns"><button type="button" class="btn" id="historyClose">Cancel</button></div>
+</dialog>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
 
+<script src="config.js"></script>
 <script src="store.js"></script>
+<script src="sync.js"></script>
+<script src="player.js"></script>
 <script>
-// Same auto-save as the computer arcade: every 30 seconds, when the app goes to the background,
-// and on the way back to the menu. Saves go to this phone's storage; opening the game resumes it.
-const params = new URLSearchParams(location.search);
-const gameId = params.get('game'), userId = params.get('user');
-let ready = false, saving = false;
-const setStatus = t => { document.getElementById('status').textContent = t; };
-function toast(msg, actLabel, act, ms = 7000) {
-  const t = document.getElementById('toast'), b = document.getElementById('toastAct');
-  document.getElementById('toastMsg').textContent = msg;
-  b.hidden = !actLabel; b.textContent = actLabel || '';
-  b.onclick = () => { t.classList.remove('show'); act && act(); };
-  t.classList.add('show');
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), ms);
-}
-
-async function restore() {
-  const gm = window.EJS_emulator.gameManager;
-  try {
-    const sram = await Store.getSave(userId, gameId, 'sram');
-    if (sram) {
-      const p = gm.getSaveFilePath(), dir = p.substring(0, p.lastIndexOf('/'));
-      try { gm.FS.mkdirTree ? gm.FS.mkdirTree(dir) : gm.FS.mkdir(dir); } catch {}
-      try { gm.FS.unlink(p); } catch {}
-      gm.FS.writeFile(p, sram.bytes);
-      gm.loadSaveFiles();
-    }
-    const state = gm.supportsStates() ? await Store.getSave(userId, gameId, 'state') : null;
-    if (state) {
-      gm.loadState(state.bytes);
-      toast('Picked up where you left off.', 'Start from the title screen instead', () => gm.restart());
-    }
-  } catch (e) { console.warn('restore failed', e); }
-  ready = true;
-  setStatus('Auto-save on');
-}
-
-async function autosave() {
-  if (!ready || saving) return;
-  saving = true;
-  try {
-    const gm = window.EJS_emulator.gameManager;
-    const sram = gm.getSaveFile();
-    if (sram && sram.length) await Store.putSave(userId, gameId, 'sram', sram.slice());
-    if (gm.supportsStates()) await Store.putSave(userId, gameId, 'state', gm.getState().slice());
-    setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
-  } catch (e) { console.warn('autosave failed', e); setStatus('Save failed, will retry'); }
-  saving = false;
-}
-async function exitToMenu() { setStatus('Saving...'); await autosave(); location.replace('./#lib'); }
-
-document.getElementById('exit').onclick = exitToMenu;
-document.getElementById('saveNow').onclick = async () => { await autosave(); toast('Saved.', null, null, 2500); };
-setInterval(autosave, 30000);
-document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
-history.pushState({ playing: true }, '');
-window.addEventListener('popstate', exitToMenu);
-
+// Phone: the game file and saves live on this phone; saves also go to the family store when connected.
 (async () => {
+  const params = new URLSearchParams(location.search);
+  const gameId = params.get('game'), userId = params.get('user');
+  Sync.load();
   const g = await Store.game(gameId);
   if (!g) { document.getElementById('game').innerHTML = '<p style="padding:80px 20px">Game not found on this phone.</p>'; return; }
-  document.title = g.title.replace(/\s*\([^)]*\)/g, '') + ' - Retro Arcade';
   const file = await Store.gameFile(g.id);
-  window.EJS_player = '#game';
-  window.EJS_core = g.system;
-  window.EJS_gameUrl = URL.createObjectURL(file);
-  window.EJS_gameName = g.title;
-  window.EJS_pathtodata = Store.EJS_DATA;
-  window.EJS_startOnLoaded = true;
-  window.EJS_disableDatabases = true;   // the game is already stored on the phone
-  window.EJS_color = '#ff5d8f';
-  window.EJS_backgroundColor = '#000000';
-  window.EJS_onGameStart = restore;
-  const s = document.createElement('script');
-  s.src = Store.EJS_DATA + 'loader.js';
-  document.body.appendChild(s);
+  ArcadePlayer({
+    game: g, menuUrl: './#lib', dataPath: Store.EJS_DATA, gameUrl: URL.createObjectURL(file),
+    async getSave(kind) {
+      const local = await Store.getSave(userId, gameId, kind);
+      let remote = null;
+      try { remote = await Sync.fetchNewer(userId, gameId, kind, local && local.at); } catch (e) { console.warn('cloud check failed', e); }
+      if (remote) { await Store.putSave(userId, gameId, kind, remote.bytes, remote.at); return { ...remote, fromCloud: true }; }
+      return local;
+    },
+    async putSave(kind, bytes, at) { await Store.putSave(userId, gameId, kind, bytes, at); Sync.upload(userId, gameId, kind, bytes, at); },
+    async history() {
+      const local = (await Store.snapshots(userId, gameId)).map(s => ({ id: 'local:' + s.slot, label: 'On this phone', at: s.at }));
+      let remote = [];
+      try { remote = (await Sync.history(userId, gameId, 'state')).map(h => ({ id: 'cloud:' + h.id, label: 'Family store' + (h.device ? ' (' + h.device + ')' : ''), at: new Date(h.updated_at).getTime() })); } catch {}
+      return [...local, ...remote].sort((a, b) => b.at - a.at);
+    },
+    async historyBytes(id) {
+      const [where, key] = id.split(':');
+      return where === 'local' ? Store.snapshot(userId, gameId, key) : Sync.historyBytes(key);
+    },
+  });
 })();
 </script>
 </body>

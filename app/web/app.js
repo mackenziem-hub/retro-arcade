@@ -110,11 +110,14 @@ async function renderLibrary(sys) {
     .sort((a, b) => nice(a.title).replace(/^The /, '').localeCompare(nice(b.title).replace(/^The /, '')));
   const recentGames = sys || query ? [] : recent.map(r => library.find(g => g.id === r.id)).filter(Boolean).slice(0, 6);
 
+  let sync = { available: false, connected: false };
+  try { sync = await (await fetch('/api/sync')).json(); } catch {}
   app.innerHTML = `
     <header class="top">
       <h1>Retro <span>Arcade</span></h1>
       <div class="spacer"></div>
       <input class="search" id="q" type="search" placeholder="Search games" value="${esc(query)}">
+      ${sync.available ? `<button class="btn icon" id="gear" title="Family saves">${sync.connected ? '☁' : '☁̸'}</button>` : ''}
       <button class="chip" id="switch" title="Switch player">
         <div class="avatar" style="background:${esc(me.color)}">${esc(initial(me.name))}</div>${esc(me.name)}
       </button>
@@ -137,6 +140,7 @@ async function renderLibrary(sys) {
     toast(r.ok ? `${NATIVE[g.system]} is opening. It saves on its own; close its window when you're done.` : (r.error || 'Could not open the game.'));
   });
   document.getElementById('switch').onclick = () => { location.hash = ''; };
+  const gear = document.getElementById('gear'); if (gear) gear.onclick = () => openSync(sync.connected);
   const q = document.getElementById('q');
   q.oninput = () => { query = q.value.trim().toLowerCase(); renderLibrary(sys).then(() => { const n = document.getElementById('q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }); };
 }
@@ -159,6 +163,23 @@ function toast(msg) {
   t.classList.add('show');
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 6000);
 }
+
+// ---------- Family saves ----------
+const syncDlg = document.getElementById('syncDlg');
+function openSync(connected) {
+  document.getElementById('syncCode').value = '';
+  document.getElementById('syncStatus').textContent = connected ? 'Connected. Saves on this computer are shared with the family.' : 'Enter the family code to share saves between devices.';
+  document.getElementById('syncDisconnect').hidden = !connected;
+  syncDlg.showModal();
+}
+async function setSyncCode(code) {
+  const r = await (await fetch('/api/sync', { method: 'POST', body: JSON.stringify({ code }) })).json();
+  if (!r.ok) { document.getElementById('syncStatus').textContent = r.error || 'Could not connect.'; return false; }
+  syncDlg.close(); toast(code ? 'Family saves connected.' : 'Family saves disconnected.'); users = await (await fetch('/api/users')).json(); route(); return true;
+}
+document.getElementById('syncCancel').onclick = () => syncDlg.close();
+document.getElementById('syncDisconnect').onclick = () => setSyncCode('');
+document.getElementById('syncForm').onsubmit = e => { e.preventDefault(); setSyncCode(document.getElementById('syncCode').value.trim()); };
 
 window.addEventListener('hashchange', route);
 loadUsers().then(async () => {

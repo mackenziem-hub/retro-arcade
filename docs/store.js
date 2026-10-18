@@ -1,8 +1,10 @@
 // Phone arcade storage. Everything stays on this device:
 //   game files  -> Origin Private File System (fast, handles big files)
-//   players, game list, saves -> IndexedDB
-const DB_NAME = 'retro-arcade', DB_VER = 1;
+//   players, game list, saves, snapshots -> IndexedDB
+const DB_NAME = 'retro-arcade', DB_VER = 2;
 const EJS_DATA = 'https://cdn.emulatorjs.org/4.2.3/data/';
+const SNAPSHOT_EVERY = 5 * 60 * 1000;   // keep a rollback snapshot at most this often
+const SNAPSHOT_SLOTS = 3;
 
 const SYSTEMS = { gb: 'Game Boy', gba: 'Game Boy Advance', nds: 'Nintendo DS', nes: 'NES', snes: 'SNES',
   n64: 'Nintendo 64', psx: 'PlayStation', psp: 'PSP', segaMD: 'Genesis' };
@@ -11,7 +13,6 @@ const COVER_SETS = { gb: 'Nintendo - Game Boy', gbc: 'Nintendo - Game Boy Color'
   n64: 'Nintendo - Nintendo 64', psx: 'Sony - PlayStation', psp: 'Sony - PlayStation Portable', segaMD: 'Sega - Mega Drive - Genesis' };
 const EXT_SYSTEM = { gb: 'gb', gbc: 'gb', gba: 'gba', nds: 'nds', nes: 'nes', sfc: 'snes', smc: 'snes', z64: 'n64', n64: 'n64', v64: 'n64',
   cue: 'psx', chd: 'psx', pbp: 'psx', cso: 'psp', md: 'segaMD', gen: 'segaMD' };
-// Extensions that could be more than one system; the import screen lets you pick.
 const AMBIGUOUS = { bin: 'psx', iso: 'psx', zip: '', '7z': '' };
 
 let dbp;
@@ -20,9 +21,10 @@ function db() {
     const r = indexedDB.open(DB_NAME, DB_VER);
     r.onupgradeneeded = () => {
       const d = r.result;
-      d.createObjectStore('games', { keyPath: 'id' });
-      d.createObjectStore('users', { keyPath: 'id' });
-      d.createObjectStore('saves');
+      if (!d.objectStoreNames.contains('games')) d.createObjectStore('games', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('users')) d.createObjectStore('users', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('saves')) d.createObjectStore('saves');
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
     };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -41,15 +43,25 @@ const all = store => tx(store, 'readonly', s => s.getAll());
 const put = (store, v, k) => tx(store, 'readwrite', s => s.put(v, k));
 const del = (store, k) => tx(store, 'readwrite', s => s.delete(k));
 const get = (store, k) => tx(store, 'readonly', s => s.get(k));
+const saveKey = (u, g, kind) => `${u}|${g}|${kind}`;
 
 const Store = {
   SYSTEMS, EJS_DATA,
+  meta: { get: k => get('meta', k), set: (k, v) => put('meta', v, k) },
+
+  // Players. Edits are stamped so the family store can tell which side is newer.
   users: () => all('users'),
-  saveUser: u => put('users', u),
-  deleteUser: id => del('users', id),
+  async saveUser(u) { await put('users', u); await this.touchProfiles(); },
+  async deleteUser(id) { await del('users', id); await this.touchProfiles(); },
+  async touchProfiles() { await put('meta', Date.now(), 'profilesAt'); await put('meta', true, 'profilesDirty'); },
+  async replaceUsers(users, at) {
+    const d = await db();
+    await new Promise((res, rej) => { const t = d.transaction('users', 'readwrite'); const s = t.objectStore('users'); s.clear(); users.forEach(u => s.put(u)); t.oncomplete = res; t.onerror = () => rej(t.error); });
+    await put('meta', at, 'profilesAt'); await put('meta', false, 'profilesDirty');
+  },
+
   games: () => all('games'),
   game: id => get('games', id),
-
   guessSystem(name, size) {
     const ext = name.split('.').pop().toLowerCase();
     if (EXT_SYSTEM[ext]) return EXT_SYSTEM[ext];
@@ -58,19 +70,17 @@ const Store = {
     return null;
   },
   isGameFile: name => { const e = name.split('.').pop().toLowerCase(); return e in EXT_SYSTEM || e in AMBIGUOUS; },
-
   coverUrl(title, system, name) {
     const set = /\.gbc$/i.test(name || '') ? COVER_SETS.gbc : COVER_SETS[system];
     const file = title.replace(/[&*/:`<>?\\|"]/g, '_') + '.png';
     return `https://thumbnails.libretro.com/${encodeURIComponent(set)}/Named_Boxarts/${encodeURIComponent(file)}`;
   },
-
-  // Copy a picked file into private storage, streaming so big PlayStation discs do not fill memory.
   async addGame(file, system, onProgress) {
     const title = file.name.replace(/\.[^.]+$/, '');
-    const id = title.replace(/[^A-Za-z0-9 ._()\-]/g, '').trim() + '.' + system;
+    // Same id the computer arcade uses, so saves line up across devices.
+    const id = title.replace(/[^A-Za-z0-9 ._()\-]/g, '').trim();
     const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('games', { create: true });
-    const fh = await dir.getFileHandle(id, { create: true });
+    const fh = await dir.getFileHandle(id + '.' + system, { create: true });
     const w = await fh.createWritable();
     const reader = file.stream().getReader();
     let done = 0;
@@ -81,22 +91,43 @@ const Store = {
       onProgress && onProgress(done / file.size);
     }
     await w.close();
-    const g = { id, title, system, name: file.name, size: file.size, added: Date.now(), cover: this.coverUrl(title, system, file.name) };
+    const g = { id, file: id + '.' + system, title, system, name: file.name, size: file.size, added: Date.now(), cover: this.coverUrl(title, system, file.name) };
     await put('games', g);
     return g;
   },
   async gameFile(id) {
+    const g = await get('games', id);
     const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('games');
-    return (await dir.getFileHandle(id)).getFile();
+    return (await dir.getFileHandle(g.file || id)).getFile();
   },
   async removeGame(id) {
-    try { const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('games'); await dir.removeEntry(id); } catch {}
+    const g = await get('games', id);
+    try { const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('games'); await dir.removeEntry(g.file || id); } catch {}
     await del('games', id);
   },
 
-  // Saves: key "<user>|<game>|sram" or "|state"
-  async getSave(user, game, kind) { const v = await get('saves', `${user}|${game}|${kind}`); return v ? v : null; },
-  putSave: (user, game, kind, bytes) => put('saves', { at: Date.now(), bytes }, `${user}|${game}|${kind}`),
+  // Saves. A state write also keeps a rollback snapshot every few minutes (3 slots, oldest dropped).
+  async getSave(user, game, kind) { return (await get('saves', saveKey(user, game, kind))) || null; },
+  async putSave(user, game, kind, bytes, at) {
+    if (kind === 'state') {
+      const cur = await get('saves', saveKey(user, game, 'state'));
+      const newest = await get('saves', saveKey(user, game, 'state.h1'));
+      if (cur && (!newest || cur.at - newest.at >= SNAPSHOT_EVERY)) {
+        for (let i = SNAPSHOT_SLOTS - 1; i >= 1; i--) {
+          const prev = await get('saves', saveKey(user, game, 'state.h' + i));
+          if (prev) await put('saves', prev, saveKey(user, game, 'state.h' + (i + 1)));
+        }
+        await put('saves', cur, saveKey(user, game, 'state.h1'));
+      }
+    }
+    return put('saves', { at, bytes }, saveKey(user, game, kind));
+  },
+  async snapshots(user, game) {
+    const out = [];
+    for (let i = 1; i <= SNAPSHOT_SLOTS; i++) { const s = await get('saves', saveKey(user, game, 'state.h' + i)); if (s) out.push({ slot: 'h' + i, at: s.at }); }
+    return out;
+  },
+  snapshot: (user, game, slot) => get('saves', saveKey(user, game, 'state.' + slot)),
   async recent(user) {
     const d = await db();
     return new Promise(res => {
@@ -104,16 +135,13 @@ const Store = {
       r.onsuccess = () => {
         const c = r.result;
         if (!c) return res(Object.entries(out).map(([id, at]) => ({ id, at })).sort((a, b) => b.at - a.at));
-        const [u, g] = c.key.split('|');
-        if (u === user) out[g] = Math.max(out[g] || 0, c.value.at);
+        const [u, g, kind] = c.key.split('|');
+        if (u === user && (kind === 'sram' || kind === 'state')) out[g] = Math.max(out[g] || 0, c.value.at);
         c.continue();
       };
     });
   },
 
-  async usage() {
-    const e = await navigator.storage.estimate();
-    return { used: e.usage || 0, quota: e.quota || 0 };
-  },
+  async usage() { const e = await navigator.storage.estimate(); return { used: e.usage || 0, quota: e.quota || 0 }; },
   persist: () => navigator.storage.persist ? navigator.storage.persist() : Promise.resolve(false),
 };

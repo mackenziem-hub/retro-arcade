@@ -1,9 +1,9 @@
 {
-    "version":  "2026.10.18.1938",
+    "version":  "2026.10.18.1956",
     "files":  [
                   {
                       "path":  "app/web/app.js",
-                      "sha256":  "808243B7ECE87E61AA0467D21E7626E87F075F008EF27D6944678C4791D65D03"
+                      "sha256":  "24F9E5A70A7456988593E4FD924359A48C970466047765E4CBC8AA63DD4A18F2"
                   },
                   {
                       "path":  "app/web/icon-192.png",
@@ -11,19 +11,23 @@
                   },
                   {
                       "path":  "app/web/index.html",
-                      "sha256":  "70A40840634DBDEFA4B6CB58CD895C73674330D50477D542DD8B49F4D1E2FCE4"
+                      "sha256":  "201BFFC9DC3E131C05F81680C468BB80DF0724C29AB205EBC99236323ED8AA2B"
                   },
                   {
                       "path":  "app/web/play.html",
-                      "sha256":  "CAFD486B9584626770731237EC4F07E031CBB3243BFDE54CA83D6AC8BB1F76D7"
+                      "sha256":  "409180EC4502430B8FC8043F82350268E16FE6ED7DC75AC4A7E1366A233D4595"
+                  },
+                  {
+                      "path":  "app/web/player.js",
+                      "sha256":  "6BF0FAC1B2450DCB5256548ED96A4B7929AC65E8051ADCCF495D80596D3C6B89"
                   },
                   {
                       "path":  "app/web/style.css",
-                      "sha256":  "4659DC27D0B10A0D2A53584DAB59366F36E62FF4EE1DE1C5667275D68CD0E56D"
+                      "sha256":  "F6DE3399E726E0AA40E929BC1741BA054088081DE75097ED590E54AA2E743AE8"
                   },
                   {
                       "path":  "app/server.ps1",
-                      "sha256":  "D56F51790A13B94C8450616112E41C6247FDD7BEF1AE9ACAD6157E40CB22E436"
+                      "sha256":  "D6913BA44E6F80D3444BF473F3A4C2853CBE7F408B980ADBAA8A72B39EAEE469"
                   },
                   {
                       "path":  "app/updater.ps1",

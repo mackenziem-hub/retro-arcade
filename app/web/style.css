@@ -73,6 +73,13 @@ body.play { overflow: hidden; }
 .toast.show { display: flex; }
 .toast button { background: none; border: 0; color: var(--accent-2); text-decoration: underline; padding: 0; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; }
+.muted { font-size: 13px; color: var(--muted); }
+.btn.icon { font-size: 18px; line-height: 1; padding: 8px 12px; }
+.link { background: none; border: 0; color: var(--accent-2); text-decoration: underline; padding: 0; font-size: inherit; }
+.histList { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.hist { text-align: left; background: var(--panel-2); border: 0; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; gap: 10px; }
+.hist small { color: var(--muted); }
+.hud .btn { padding: 8px 12px; font-size: 14px; }
 
 @media (max-width: 600px) {
   header.top h1 { font-size: 20px; }

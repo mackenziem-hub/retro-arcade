@@ -22,6 +22,19 @@
   </form>
 </dialog>
 
+<dialog id="syncDlg">
+  <form method="dialog" id="syncForm">
+    <h3 style="margin-top:0">Family saves</h3>
+    <p class="muted" id="syncStatus" style="margin-top:0"></p>
+    <input type="text" id="syncCode" placeholder="Family code" autocomplete="off">
+    <div class="btns">
+      <button type="button" class="btn danger" id="syncDisconnect" hidden>Disconnect</button>
+      <button type="button" class="btn" id="syncCancel">Cancel</button>
+      <button type="submit" class="btn primary">Connect</button>
+    </div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAct"></button></div>
 <script src="/app.js"></script>
 </body>
