@@ -18,11 +18,12 @@ try {
     if ($manifest.version -eq $local) { return }
 
     # Only these files may ever be replaced by an update.
-    $allowed = '^(app/(web/[A-Za-z0-9._-]+|server\.ps1|updater\.ps1|fetch-covers\.ps1)|READ ME FIRST\.txt|Copy to Drive\.ps1)$'
+    $allowed = '^(app/(web/[A-Za-z0-9._-]+|server\.ps1|updater\.ps1|fetch-covers\.ps1)|READ ME FIRST\.txt|PHONE SETUP \(Android\)\.txt|Copy to Drive\.ps1)$'
     $sha = [Security.Cryptography.SHA256]::Create()
     $staged = @()
     foreach ($f in $manifest.files) {
-        if ($f.path -notmatch $allowed -or $f.path -match '\.\.') { throw "Update lists a file it may not change: $($f.path)" }
+        # Unknown paths are skipped (a newer updater in this same update may allow them on the next start).
+        if ($f.path -notmatch $allowed -or $f.path -match '\.\.') { Write-Host "Skipping $($f.path)"; continue }
         $dest = Join-Path $Root ($f.path -replace '/', '\')
         if ((Test-Path $dest) -and ([BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($dest))) -replace '-', '') -eq $f.sha256) { continue }
         $bytes = $wc.DownloadData($base + ([Uri]::EscapeUriString($f.path)))

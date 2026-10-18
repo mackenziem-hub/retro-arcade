@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.18.1929",
+    "version":  "2026.10.18.1931",
     "files":  [
                   {
                       "path":  "app/web/app.js",
@@ -23,7 +23,7 @@
                   },
                   {
                       "path":  "app/updater.ps1",
-                      "sha256":  "77A8DD80EB4687C59A35B84FB4D2CA3CE31CB6D116CDC685E60388492022B9B4"
+                      "sha256":  "049C9F4107DA70C49834A9E36C93C03AFCD9212C088C26282AC095B5DD66E08A"
                   },
                   {
                       "path":  "app/fetch-covers.ps1",
@@ -32,6 +32,10 @@
                   {
                       "path":  "READ ME FIRST.txt",
                       "sha256":  "24F41B6766E5CFFD111E7109CF1F4CD7889DDD5A7F1AA5CBA5714DCB488786F8"
+                  },
+                  {
+                      "path":  "PHONE SETUP (Android).txt",
+                      "sha256":  "BC8B9C37A0DECFA7EA7EC0CEFF972A7E577D5A2BEF791A90806BE48D2CD7CFBE"
                   },
                   {
                       "path":  "Copy to Drive.ps1",

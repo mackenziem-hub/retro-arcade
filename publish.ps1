@@ -8,7 +8,7 @@ $Src = 'C:\Users\Owner\RetroArcade'
 
 # Same list the updater accepts. Games, saves, covers and emulators are never published.
 $files = @(Get-ChildItem "$Src\app\web" -File | ForEach-Object { "app/web/$($_.Name)" }) +
-         'app/server.ps1', 'app/updater.ps1', 'app/fetch-covers.ps1', 'READ ME FIRST.txt', 'Copy to Drive.ps1'
+         'app/server.ps1', 'app/updater.ps1', 'app/fetch-covers.ps1', 'READ ME FIRST.txt', 'PHONE SETUP (Android).txt', 'Copy to Drive.ps1'
 
 $sha = [Security.Cryptography.SHA256]::Create()
 $list = foreach ($f in $files) {

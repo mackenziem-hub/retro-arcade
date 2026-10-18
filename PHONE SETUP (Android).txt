@@ -1,0 +1,31 @@
+RETRO ARCADE ON AN ANDROID PHONE
+================================
+
+The phone uses Lemuroid, a free all-in-one game app: box art library,
+auto-save, touch controls, and Bluetooth controllers. It works offline.
+
+1. INSTALL LEMUROID
+   Play Store: search "Lemuroid" (by Swordfish90), or get it from F-Droid.
+
+2. COPY THE GAMES TO THE PHONE (about 4.7 GB)
+   a. Plug the phone into the computer with its USB cable.
+      On the phone, tap the USB notification and choose "File transfer".
+   b. On the phone's storage, make a folder called  Games
+   c. From this arcade's "games" folder, copy these folders into it:
+        Game Boy, Game Boy Color, Game Boy Advance, NES, SNES,
+        Nintendo 64, Nintendo DS, PlayStation
+      Tight on space? Skip PlayStation (2.9 GB) and copy just the games you want.
+
+3. POINT LEMUROID AT THE GAMES
+   Open Lemuroid, and when it asks for a folder, pick the  Games  folder.
+   It finds every game and adds the box art by itself.
+
+SAVING
+   Lemuroid auto-saves when you leave a game and resumes where you stopped.
+   Phone saves stay on the phone. They do not sync with the computer arcade.
+
+OPTIONAL
+   GameCube games: install "Dolphin Emulator" from the Play Store and copy the
+     "GameCube & Wii" folder too (9.6 GB). Needs a recent, powerful phone.
+   Pokemon online (PokeMMO): install Extras\PokeMMO-Client.apk
+     (allow "install unknown apps" when asked).
