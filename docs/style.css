@@ -126,4 +126,5 @@ body.kid .tabs .tab, body.kid .chip { font-size: 16px; padding: 10px 18px; }
 }
 
 .tapToPlay { position: fixed; inset: 0; z-index: 9998; display: grid; place-items: center; background: rgba(0,0,0,.45); cursor: pointer; }
+.tapToPlay[hidden] { display: none; }
 .tapToPlay div { background: var(--accent); color: #fff; font-weight: 700; font-size: 22px; padding: 16px 32px; border-radius: 999px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }

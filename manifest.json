@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.19.1748",
+    "version":  "2026.10.19.1913",
     "files":  [
                   {
                       "path":  "app/web/cover-aetheria.png",
@@ -31,11 +31,11 @@
                   },
                   {
                       "path":  "app/web/player.js",
-                      "sha256":  "CD90893C0070A3C41118AA5E4516D41482A1AD393E7CB5F788F119EC964CC1B0"
+                      "sha256":  "2D74462FA59071ED0CE4F4AD99D886964FA5A57388E11275CEA6E4AC8B8B3F14"
                   },
                   {
                       "path":  "app/web/style.css",
-                      "sha256":  "A4409246BE3C58E8D5AE7DA36C0399D6A22D28A05C59F2B1FAF7C4445EC0E2DE"
+                      "sha256":  "AB5416ABAD880A8D745846C1D44DF760F86FA062F153D59CF05A324917C9F907"
                   },
                   {
                       "path":  "app/server.ps1",

@@ -65,7 +65,7 @@ window.ArcadePlayer = function (backend) {
     // Browsers hold the sound (and with it the emulator) until the page has been clicked once.
     setTimeout(() => {
       let f = 0; try { f = gm().getFrameNum(); } catch {}
-      if (f < 30 && !menuOpen) { const o = $('tapToPlay'); o.hidden = false; const go = () => { o.hidden = true; try { E().elements.parent.focus(); } catch {} }; o.onclick = go; o.ontouchend = go; }
+      if (f < 30 && !menuOpen) { const o = $('tapToPlay'); o.hidden = false; const go = e => { if (e) e.preventDefault(); o.hidden = true; try { E().elements.parent.focus(); } catch {} }; o.onpointerdown = go; o.onclick = go; }
     }, 2500);
   }
   async function checkSram() {
