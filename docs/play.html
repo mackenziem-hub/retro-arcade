@@ -107,14 +107,7 @@
       const [where, key] = id.split(':');
       return where === 'local' ? Store.snapshot(userId, gameId, key) : Sync.historyBytes(key);
     },
-    async addPlaytime(mins) {
-      const users = await Store.users();
-      const u = users.find(x => x.id === userId); if (!u) return;
-      u.play = u.play || {}; u.play[gameId] = (u.play[gameId] || 0) + mins;
-      const at = Date.now();
-      await Store.replaceUsers(users, at); await Store.meta.set('profilesDirty', true);
-      if (Sync.ready()) { try { await Sync.pushProfiles(users, at); await Store.meta.set('profilesDirty', false); } catch {} }
-    },
+    addPlaytime: mins => Sync.addPlaytime(userId, gameId, mins),
   });
 })();
 </script>

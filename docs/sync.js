@@ -3,6 +3,7 @@
 // A save only replaces the store's copy when the store still holds the version this phone last synced
 // (or one this phone wrote). If another device saved since, nothing is overwritten: the family copy wins
 // the next time the game opens and this phone's copy is kept. The store keeps the last few versions for rollback.
+const PLAYTIME_EVERY = 5 * 60 * 1000;   // how often playtime goes to the family store
 const Sync = (() => {
   const cfg = { url: '', key: '', family: '' };
   let deviceId = null;
@@ -33,6 +34,7 @@ const Sync = (() => {
   // Uploads run one at a time per save; a queued upload is skipped when a newer one for the same save is waiting.
   // Resolves to { result: 'ok' | 'conflict' | 'offline' | 'skipped' | 'error', device? }.
   const chains = new Map(), latest = new Map();
+  let playFlush = null;   // the playtime send in progress, if any
   const savePath = (player, game, kind) => `arcade_saves?player=eq.${encodeURIComponent(player)}&game=eq.${encodeURIComponent(game)}&kind=eq.${kind}`;
   function upload(player, game, kind, bytes, at, base) {
     const k = `${player}|${game}|${kind}`;
@@ -116,6 +118,52 @@ const Sync = (() => {
       return rest(`arcade_save_history?select=id,updated_at,device&player=eq.${encodeURIComponent(player)}&game=eq.${encodeURIComponent(game)}&kind=eq.${kind}&order=updated_at.desc`, {}, 8000);
     },
     async historyBytes(id) { const r = (await rest(`arcade_save_history?select=data,updated_at&id=eq.${id}`, {}, 60000))[0]; return { bytes: await gunzip(unb64(r.data)), at: new Date(r.updated_at).getTime() }; },
+    // Playtime is counted on this phone and sent every few minutes. Each send first takes the family's latest
+    // player list and adds only this phone's new minutes, so it never undoes a change made on another device
+    // (a hidden game, a new player, kid mode). Without a family code it simply counts on the phone.
+    async addPlaytime(userId, gameId, mins) {
+      if (!this.configured()) {
+        const users = await Store.users(), u = users.find(x => x.id === userId); if (!u) return;
+        u.play = u.play || {}; u.play[gameId] = (u.play[gameId] || 0) + mins;
+        await Store.replaceUsers(users, Date.now()); return;
+      }
+      const pend = (await Store.meta.get('playPending')) || {};
+      const k = userId + '|' + gameId; pend[k] = (pend[k] || 0) + mins;
+      await Store.meta.set('playPending', pend);
+      if (Date.now() - ((await Store.meta.get('playSentAt')) || 0) >= PLAYTIME_EVERY) await this.flushPlaytime();
+    },
+    // One send at a time: the minutes are taken off the pile first, and put back if the send fails.
+    flushPlaytime() {
+      if (playFlush) return playFlush;
+      playFlush = (async () => {
+        const pend = (await Store.meta.get('playPending')) || {};
+        if (!Object.keys(pend).length || !ready()) return;   // offline: the minutes wait on the phone
+        await Store.meta.set('playPending', {});
+        let applied = false;
+        try {
+          let users = await Store.users();
+          const pulled = await this.pullProfiles((await Store.meta.get('profilesAt')) || 0);   // throws if the store cannot be reached
+          if (pulled) { await Store.replaceUsers(pulled.users, pulled.at); users = pulled.users; }
+          for (const [k, mins] of Object.entries(pend)) {
+            const [userId, gameId] = k.split('|'), u = users.find(x => x.id === userId);
+            if (u) { u.play = u.play || {}; u.play[gameId] = (u.play[gameId] || 0) + mins; }
+          }
+          const at = Date.now();
+          await Store.replaceUsers(users, at); applied = true;
+          await Store.meta.set('playSentAt', at);
+          await this.pushProfiles(users, at);
+        } catch (e) {
+          if (applied) await Store.meta.set('profilesDirty', true);   // counted on the phone; the list goes up with the next sync
+          else {                                                       // nothing counted yet: put the minutes back
+            const now = (await Store.meta.get('playPending')) || {};
+            for (const [k, mins] of Object.entries(pend)) now[k] = (now[k] || 0) + mins;
+            await Store.meta.set('playPending', now);
+          }
+          throw e;
+        }
+      })().finally(() => { playFlush = null; });
+      return playFlush;
+    },
     // Player list: whichever side changed most recently wins.
     async pullProfiles(localAt) {
       if (!ready()) return null;

@@ -23,7 +23,7 @@ const WEB_GAMES = [
   { id: 'Aetheria Starfall', title: 'Aetheria Starfall', system: 'web', link: 'https://aetheria-starfall.vercel.app', cover: 'cover-starfall.png', added: 1792425600000 },
 ];
 const backend = {
-  users: async () => syncProfiles(await Store.users()),
+  users: async () => { try { await Sync.flushPlaytime(); } catch {} return syncProfiles(await Store.users()); },
   async saveUsers(list) {
     const at = Date.now();
     await Store.replaceUsers(list, at); await Store.meta.set('profilesDirty', true);
@@ -116,7 +116,7 @@ document.getElementById('restorePicker').onchange = async e => {
 };
 
 // Saves made offline go up as soon as the phone is back online, and whenever the arcade opens.
-window.addEventListener('online', () => { Sync.flush().catch(() => {}); menu.route(); });
+window.addEventListener('online', () => { Sync.flush().catch(() => {}); Sync.flushPlaytime().catch(() => {}); menu.route(); });
 Sync.flush().catch(() => {});
 menu.route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
