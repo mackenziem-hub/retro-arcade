@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.19.1921",
+    "version":  "2026.10.19.1931",
     "files":  [
                   {
                       "path":  "app/web/arcade.ico",
@@ -35,7 +35,7 @@
                   },
                   {
                       "path":  "app/web/player.js",
-                      "sha256":  "2D74462FA59071ED0CE4F4AD99D886964FA5A57388E11275CEA6E4AC8B8B3F14"
+                      "sha256":  "F1311F8FD9F57395EF80BED63750AA39D26C025DAD7D10B395160903240A28C9"
                   },
                   {
                       "path":  "app/web/style.css",

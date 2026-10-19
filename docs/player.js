@@ -38,6 +38,14 @@ window.ArcadePlayer = function (backend) {
   // ---------- saving ----------
   async function restore() {
     started = true;
+    // The emulator's N64 layout puts the N64 A button on the Xbox B button and N64 B on Y. Line them up by name
+    // (Xbox A = A, Xbox B = B) unless someone picked their own buttons in the control settings.
+    if (game.system === 'n64') try {
+      for (const p of Object.values(E().controls)) {
+        if (p[0] && p[0].value2 === 'BUTTON_2') p[0].value2 = 'BUTTON_1';
+        if (p[1] && p[1].value2 === 'BUTTON_4') p[1].value2 = 'BUTTON_2';
+      }
+    } catch (e) { console.warn('n64 buttons', e); }
     if (bare) { ready = true; setStatus('bare'); return; }
     try {
       const sram = await backend.getSave('sram');
