@@ -57,6 +57,7 @@ const backend = {
   games: async () => (await json('/api/library')).games || [],
   recent: async u => (await json('/api/recent?user=' + encodeURIComponent(u))).recent || [],
   play(g, user) {
+    if (g.link) { window.open(g.link, '_blank'); return; }
     const qs = 'game=' + encodeURIComponent(g.id) + '&user=' + encodeURIComponent(user.id);
     if (!g.native) { location.href = '/play.html?' + qs; return; }
     json('/api/launch?' + qs, { method: 'POST' }).then(r => { if (!r.ok) menu.toast(r.error || 'Could not open the game.'); }).catch(() => menu.toast('Could not open the game.'));

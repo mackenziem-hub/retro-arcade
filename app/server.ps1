@@ -75,6 +75,11 @@ $handler = {
     $ctrTitles = @{ '0011c400' = 'Pokemon Omega Ruby (USA)'; '0011c500' = 'Pokemon Alpha Sapphire (USA)';
                     '00055d00' = 'Pokemon X (USA)'; '00055e00' = 'Pokemon Y (USA)';
                     '00164800' = 'Pokemon Sun (USA)'; '00175e00' = 'Pokemon Moon (USA)' }
+    # Built-in web games (title, link, cover served from app\web, date added for the NEW badge).
+    $webGames = @(
+        @{ title = 'Aetheria'; link = 'https://pwa-six-iota.vercel.app'; cover = '/cover-aetheria.png'; added = 1792425600000 }
+        @{ title = 'Aetheria Starfall'; link = 'https://aetheria-starfall.vercel.app'; cover = '/cover-starfall.png'; added = 1792425600000 }
+    )
     $SnapshotEvery = 5 * 60 * 1000; $SnapshotSlots = 3
 
     function Send($code, $bytes, $type) {
@@ -194,6 +199,23 @@ $handler = {
                     if ($list | Where-Object { $_.id -eq (SafeName $name) }) { return }
                     $list += (Entry $name '3ds' 'Nintendo 3DS' $boot.FullName $null $boot.Length 0)
                 }
+            }
+            # Web games open in their own window. Built-in ones ship with the arcade; more can be added as
+            # Windows internet shortcuts (.url files) in games\Web Games.
+            $web = @($webGames)
+            $wdir = Join-Path $S.Games 'Web Games'
+            if (Test-Path $wdir) {
+                Get-ChildItem $wdir -Filter *.url -File | ForEach-Object {
+                    $u = (Get-Content $_.FullName | Where-Object { $_ -match '^URL=' } | Select-Object -First 1) -replace '^URL=', ''
+                    if ($u -match '^https?://') { $web += @{ title = $_.BaseName; link = $u.Trim(); added = ([DateTimeOffset]$_.CreationTimeUtc).ToUnixTimeMilliseconds() } }
+                }
+            }
+            foreach ($w in $web) {
+                if ($list | Where-Object { $_.id -eq (SafeName $w.title) }) { continue }
+                $e = Entry $w.title 'web' 'Web Games' $null $null 0 $w.added
+                $e.link = $w.link
+                if ($w.cover -and -not $e.cover) { $e.cover = $w.cover }
+                $list += $e
             }
             $list
         }

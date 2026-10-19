@@ -12,7 +12,7 @@
 // A hidden "_settings" entry in the same list carries hiddenForKids: [gameId] so it syncs like the players do.
 window.ArcadeMenu = function (backend) {
   const SYSTEMS = { gb: 'Game Boy', gba: 'Game Boy Advance', nds: 'Nintendo DS', nes: 'NES', snes: 'SNES', n64: 'Nintendo 64',
-    psx: 'PlayStation', psp: 'PSP', segaMD: 'Genesis', gc: 'GameCube & Wii', ps2: 'PlayStation 2', '3ds': 'Nintendo 3DS' };
+    psx: 'PlayStation', psp: 'PSP', segaMD: 'Genesis', gc: 'GameCube & Wii', ps2: 'PlayStation 2', '3ds': 'Nintendo 3DS', web: 'Web games' };
   const NATIVE = { gc: 'Dolphin', ps2: 'PCSX2', '3ds': 'Azahar' };
   const COLORS = ['#ff5d8f', '#ffc145', '#4ade80', '#38bdf8', '#a78bfa', '#fb923c', '#f472b6', '#e2e8f0'];
   const NEW_DAYS = 7;

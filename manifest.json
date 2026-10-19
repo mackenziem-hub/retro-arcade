@@ -1,17 +1,25 @@
 {
-    "version":  "2026.10.18.2045",
+    "version":  "2026.10.19.1423",
     "files":  [
+                  {
+                      "path":  "app/web/cover-aetheria.png",
+                      "sha256":  "A8A5801C234CB039C72863D6DB9C51C8C80B89FE7AE66120D47B8F7575DAEBC2"
+                  },
+                  {
+                      "path":  "app/web/cover-starfall.png",
+                      "sha256":  "B007701E661D3738CFEED3C30EBCE6DEFA80C7FFE3EBEEE9A55E4D57D9AC8525"
+                  },
                   {
                       "path":  "app/web/icon-192.png",
                       "sha256":  "934A925A98D00E72E6E4FE28292905AE278D6118A135D3C52BB27002AF9D0539"
                   },
                   {
                       "path":  "app/web/index.html",
-                      "sha256":  "1D2941BC9E01BA2789CB62FA117764D96DC5A46C871F8F8B6ADD85277AA76E98"
+                      "sha256":  "4105C9BA51B67181C0579D7CAAD5577908121E91902C71A5B496B695116D9388"
                   },
                   {
                       "path":  "app/web/menu.js",
-                      "sha256":  "DF96B391C4ABB316475A901C0E563D0F38B495AB7C74A2E27B78427028E4A3A0"
+                      "sha256":  "3573440627215FD2616091B0B18A4C9255CD0FF84A6811F31E0F96EFBD5B1810"
                   },
                   {
                       "path":  "app/web/nav.js",
@@ -31,7 +39,7 @@
                   },
                   {
                       "path":  "app/server.ps1",
-                      "sha256":  "01BB4BB382AEBE518513D37BB8754DE768535375E1454F589C45C5BDD9C0D55F"
+                      "sha256":  "CF081D3737C09FF37A178B4DAA0AC09BA07EB283F84C5D6C430555056A3215F2"
                   },
                   {
                       "path":  "app/updater.ps1",
