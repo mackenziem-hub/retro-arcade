@@ -17,6 +17,11 @@ async function syncProfiles(users) {
   return users;
 }
 
+// Web games open in their own window and need no download (same list as the computer arcade).
+const WEB_GAMES = [
+  { id: 'Aetheria', title: 'Aetheria', system: 'web', link: 'https://pwa-six-iota.vercel.app', cover: 'cover-aetheria.png', added: 1792425600000 },
+  { id: 'Aetheria Starfall', title: 'Aetheria Starfall', system: 'web', link: 'https://aetheria-starfall.vercel.app', cover: 'cover-starfall.png', added: 1792425600000 },
+];
 const backend = {
   users: async () => syncProfiles(await Store.users()),
   async saveUsers(list) {
@@ -24,13 +29,13 @@ const backend = {
     await Store.replaceUsers(list, at); await Store.meta.set('profilesDirty', true);
     if (Sync.ready()) { try { await Sync.pushProfiles(list, at); await Store.meta.set('profilesDirty', false); } catch (e) { console.warn('push failed', e); } }
   },
-  games: () => Store.games(),
+  games: async () => [...await Store.games(), ...WEB_GAMES],
   async recent(u) {
     const local = await Store.recent(u);
     try { for (const r of await Sync.recent(u)) { const l = local.find(x => x.id === r.id); if (l) l.at = Math.max(l.at, r.at); else local.push(r); } } catch {}
     return local;
   },
-  play: (g, user) => { location.href = 'play.html?game=' + encodeURIComponent(g.id) + '&user=' + encodeURIComponent(user.id); },
+  play: (g, user) => { if (g.link) { window.open(g.link, '_blank'); return; } location.href = 'play.html?game=' + encodeURIComponent(g.id) + '&user=' + encodeURIComponent(user.id); },
   sync: {
     available: !!cloud.url,
     connected: () => Sync.configured(),
@@ -48,7 +53,7 @@ const backend = {
     disconnect: async () => { Sync.configure(cloud.url, cloud.key, ''); },
   },
   extras: [{ label: '+ Add games', onclick: () => document.getElementById('picker').click() }],
-  gameActions: g => [{ label: 'Remove from this phone (saves are kept)', onclick: async () => { await Store.removeGame(g.id); } }],
+  gameActions: g => g.link ? [] : [{ label: 'Remove from this phone (saves are kept)', onclick: async () => { await Store.removeGame(g.id); } }],
   settingsActions: [
     { label: 'Back up saves to a file', onclick: backupSaves },
     { label: 'Restore saves from a file', onclick: () => document.getElementById('restorePicker').click() },
