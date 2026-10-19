@@ -53,8 +53,9 @@
   if (!g) { document.getElementById('game').innerHTML = '<p style="padding:80px 20px">Game not found.</p>'; return; }
   const getSave = async kind => {
     const r = await fetch(api('save', '&kind=' + kind));
-    if (!r.ok) return null;
-    return { bytes: new Uint8Array(await r.arrayBuffer()), at: +r.headers.get('X-Saved-At') || 0, fromCloud: r.headers.get('X-From-Cloud') === '1' };
+    const cloudUnreachable = r.headers.get('X-Cloud') === 'unreachable';
+    if (!r.ok) return cloudUnreachable ? { bytes: null, cloudUnreachable } : null;
+    return { bytes: new Uint8Array(await r.arrayBuffer()), at: +r.headers.get('X-Saved-At') || 0, fromCloud: r.headers.get('X-From-Cloud') === '1', cloudUnreachable };
   };
   ArcadePlayer({
     game: g, menuUrl: '/#lib', dataPath: '/emulatorjs/', gameUrl: g.url,
@@ -62,7 +63,12 @@
     threads: g.system === 'psp' && window.crossOriginIsolated,
     getSave,
     async peekSave(kind) { const r = await fetch(api('save', '&kind=' + kind + '&peek=1')); return r.ok ? { at: +r.headers.get('X-Saved-At') || 0 } : null; },
-    putSave: (kind, bytes, at) => fetch(api('save', '&kind=' + kind + '&at=' + at), { method: 'POST', body: bytes }),
+    // The server answers X-Conflict when an earlier upload of this save was held back because another device saved newer progress.
+    async putSave(kind, bytes, at) {
+      const r = await fetch(api('save', '&kind=' + kind + '&at=' + at), { method: 'POST', body: bytes });
+      const c = r.headers.get('X-Conflict'); if (c && this.notifyConflict) this.notifyConflict(c);
+      return r;
+    },
     history: async () => (await (await fetch(api('history'))).json()).history || [],
     async historyBytes(id) {
       const r = await fetch(api('history', '&id=' + encodeURIComponent(id)));

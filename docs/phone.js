@@ -110,6 +110,8 @@ document.getElementById('restorePicker').onchange = async e => {
   catch { menu.toast('That file is not an arcade backup.'); }
 };
 
-window.addEventListener('online', () => menu.route());
+// Saves made offline go up as soon as the phone is back online, and whenever the arcade opens.
+window.addEventListener('online', () => { Sync.flush().catch(() => {}); menu.route(); });
+Sync.flush().catch(() => {});
 menu.route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');

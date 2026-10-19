@@ -1,6 +1,6 @@
 // Offline support. The menu loads fresh when online (so updates arrive) and from cache when offline.
 // Emulator cores and box art are kept after the first use, so games run with no internet.
-const SHELL = 'arcade-shell-v4', ASSETS = 'arcade-assets-v1';
+const SHELL = 'arcade-shell-v5', ASSETS = 'arcade-assets-v1';
 const SHELL_FILES = ['./', 'index.html', 'play.html', 'config.js', 'store.js', 'sync.js', 'nav.js', 'menu.js', 'player.js', 'phone.js', 'style.css', 'phone.css', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'cover-aetheria.png', 'cover-starfall.png'];
 
 self.addEventListener('install', e => {

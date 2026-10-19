@@ -1,7 +1,8 @@
 // In-game player shared by the computer arcade and the phone app.
 // The page gives it a backend (where saves live) and this handles the rest:
 //   - instant save the moment the game saves (checked every 2 seconds)
-//   - a full snapshot every 30 seconds, when the app is hidden, and on the way back to the menu
+//   - a full snapshot every 30 seconds, when the app is hidden, and on the way back to the menu,
+//     but only after someone has actually played, so a game left open never re-saves old progress
 //   - quick menu (Esc, the Menu button, Select+Start or Guide on a controller): manual slots, Go back, screenshot, fast forward
 //   - DS extras: Swap screens, Stylus mode on phones, and a virtual stylus driven by the controller or keyboard
 //   - playtime, vibration on touch buttons, landscape on phones
@@ -11,6 +12,8 @@ window.ArcadePlayer = function (backend) {
   const isTouch = matchMedia('(pointer: coarse)').matches;
   const isDS = game.system === 'nds';
   let ready = false, busy = false, lastSramHash = null, started = false, menuOpen = false, ff = false;
+  let played = false, warnedConflict = false;   // played: input since the last snapshot
+  let lastInput = 0, lastSramSent = 0;
 
   const setStatus = t => { $('status').textContent = t; };
   function toast(msg, actLabel, act, ms = 7000) {
@@ -19,12 +22,18 @@ window.ArcadePlayer = function (backend) {
     b.hidden = !actLabel; b.textContent = actLabel || '';
     b.onclick = () => { t.classList.remove('show'); act && act(); };
     t.classList.add('show');
-    clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), ms);
+    clearTimeout(toast.timer); if (ms > 0) toast.timer = setTimeout(() => t.classList.remove('show'), ms);   // ms 0: stays until tapped
   }
   const ago = at => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : new Date(at).toLocaleDateString(); };
   const clock = at => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   function hash(b) { let h = 2166136261; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 16777619); } return h >>> 0; }
   const E = () => window.EJS_emulator, gm = () => E().gameManager;
+  // The backend calls this when a save could not go to the family store because another device saved newer progress.
+  backend.notifyConflict = device => {
+    if (warnedConflict) return; warnedConflict = true;
+    const from = !device ? 'another device' : /^ph-/.test(device) ? 'a phone' : device;
+    toast('This game has newer progress from ' + from + '. Your play here is kept on this device and was not sent. Go back to the menu and open the game again to continue from the newest save.', 'Back to menu', () => exitToMenu(), 0);
+  };
 
   // ---------- saving ----------
   async function restore() {
@@ -32,7 +41,8 @@ window.ArcadePlayer = function (backend) {
     if (bare) { ready = true; setStatus('bare'); return; }
     try {
       const sram = await backend.getSave('sram');
-      if (sram) {
+      let offline = sram && sram.cloudUnreachable;
+      if (sram && sram.bytes) {
         const p = gm().getSaveFilePath(), dir = p.substring(0, p.lastIndexOf('/'));
         try { gm().FS.mkdirTree ? gm().FS.mkdirTree(dir) : gm().FS.mkdir(dir); } catch {}
         try { gm().FS.unlink(p); } catch {}
@@ -41,10 +51,12 @@ window.ArcadePlayer = function (backend) {
         lastSramHash = hash(sram.bytes);
       }
       const state = gm().supportsStates() ? await backend.getSave('state') : null;
-      if (state) {
+      offline = offline || (state && state.cloudUnreachable);
+      if (state && state.bytes) {
         gm().loadState(state.bytes);
         toast('Picked up where you left off' + (state.fromCloud ? ' (from another device).' : '.'), 'Start from the title screen instead', () => gm().restart());
       }
+      if (offline) toast('Could not reach family saves, so this is the copy saved on this device. If you played on another device since, go back to the menu and try again when the internet is working.', 'Back to menu', () => exitToMenu(), 12000);
     } catch (e) { console.warn('restore failed', e); }
     ready = true;
     setStatus('Auto-save on');
@@ -58,24 +70,31 @@ window.ArcadePlayer = function (backend) {
   }
   async function checkSram() {
     if (!ready || busy) return;
+    // Some games use their save memory as scratch space, so it changes even when nobody plays. Only send it while
+    // someone has played in the last 2 minutes, and at most every 10 seconds.
+    if (Date.now() - lastInput > 120000 || Date.now() - lastSramSent < 10000) return;
     try {
       const sram = gm().getSaveFile();
       if (!sram || !sram.length) return;
       const h = hash(sram);
       if (h === lastSramHash) return;
-      lastSramHash = h; busy = true;
+      lastSramHash = h; busy = true; lastSramSent = Date.now();
       await backend.putSave('sram', sram.slice(), Date.now());
       setStatus('Game saved ' + clock(Date.now()));
     } catch (e) { console.warn('sram save failed', e); }
     busy = false;
   }
-  async function snapshot(kind = 'state') {
+  // kind 'state' with force false is the background snapshot: skipped unless someone played since the last one.
+  async function snapshot(kind = 'state', force = false) {
     if (!ready || busy) return false;
+    const background = kind === 'state' && !force;
+    if (background && !played) return true;
     busy = true; let ok = true;
     try {
       const sram = gm().getSaveFile();
-      if (sram && sram.length) { lastSramHash = hash(sram); await backend.putSave('sram', sram.slice(), Date.now()); }
+      if (sram && sram.length) { const h = hash(sram); if (h !== lastSramHash) { lastSramHash = h; await backend.putSave('sram', sram.slice(), Date.now()); } }
       if (gm().supportsStates()) await backend.putSave(kind, gm().getState().slice(), Date.now());
+      if (kind === 'state') played = false;
       setStatus('Saved ' + clock(Date.now()));
     } catch (e) { console.warn('snapshot failed', e); setStatus('Save failed, will retry'); ok = false; }
     busy = false; return ok;
@@ -209,7 +228,14 @@ window.ArcadePlayer = function (backend) {
 
   // ---------- wire up ----------
   $('menuBtn').onclick = openQuick;
-  $('saveNow').onclick = async () => { if (await snapshot()) toast('Saved.', null, null, 2500); };
+  $('saveNow').onclick = async () => { if (await snapshot('state', true)) toast('Saved.', null, null, 2500); };
+  // Anything the player does counts as play: keys, clicks, touches, and controller buttons or sticks.
+  const input = () => { played = true; lastInput = Date.now(); };
+  for (const ev of ['keydown', 'pointerdown', 'touchstart']) window.addEventListener(ev, input, { capture: true, passive: true });
+  setInterval(() => {
+    if (document.hidden || Date.now() - lastInput < 1000) return;
+    try { for (const p of navigator.getGamepads ? navigator.getGamepads() : []) if (p && (p.buttons.some(b => b.pressed) || p.axes.some(a => Math.abs(a) > 0.5))) { input(); break; } } catch {}
+  }, 250);
   const bare = new URLSearchParams(location.search).has('bare');   // troubleshooting: no timers, no extras
   if (!bare) setInterval(checkSram, 2000);
   if (!bare) setInterval(() => { if (!menuOpen) snapshot(); }, 30000);

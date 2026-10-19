@@ -23,6 +23,7 @@ $State = [hashtable]::Synchronized(@{
     Family = "$($cfg.familyCode)"
     Device = $env:COMPUTERNAME
     Log    = Join-Path $Root 'arcade.log'
+    Conflicts = [hashtable]::Synchronized(@{})   # "user|game|kind" -> device whose newer save was not overwritten
 })
 # BIOS files live with the games (games\BIOS) so they move together.
 $State.Bios = Join-Path $State.Games 'BIOS'
@@ -145,6 +146,44 @@ $handler = {
         $row = @(Cloud "$q&select=data,updated_at" 'GET' $null 60)[0]
         @{ bytes = (Ungz ([Convert]::FromBase64String($row.data))); at = (FromIso $row.updated_at) }
     }
+    # ---- conflict guard ----
+    # Beside each save, "<save>.base" holds the family store time this device last synced that save (downloaded or uploaded).
+    # An upload only goes ahead when the store still holds that version (or one this computer wrote). Otherwise another
+    # device saved newer progress in the meantime, so the local copy is kept and the store is left alone.
+    function GetBase($file) { $b = "$file.base"; if (Test-Path -LiteralPath $b) { try { return [long]([IO.File]::ReadAllText($b).Trim()) } catch {} }; $null }
+    function SetBase($file, $at) { try { [IO.File]::WriteAllText("$file.base", [string][long]$at) } catch {} }
+    function CloudMeta($user, $game, $kind) {
+        $q = "arcade_saves?player=eq.$([Uri]::EscapeDataString($user))&game=eq.$([Uri]::EscapeDataString($game))&kind=eq.$kind&select=updated_at,device"
+        @(Cloud $q 'GET' $null 8 | Where-Object { $null -ne $_ })[0]
+    }
+    # Returns 'ok' or 'conflict'. $prevAt (time of the local copy before this write) stands in for a missing .base file once.
+    function GuardedUpload($user, $game, $kind, $bytes, $at, $file, $prevAt) {
+        $key = "$user|$game|$kind"
+        $m = CloudMeta $user $game $kind
+        if ($m) {
+            $cAt = FromIso $m.updated_at; $base = GetBase $file; if ($null -eq $base) { $base = [long]$prevAt }
+            if ($cAt -gt ($base + 1000) -and "$($m.device)" -ne $S.Device) {
+                $S.Conflicts[$key] = if ($m.device) { "$($m.device)" } else { 'another device' }
+                Log "kept local copy, family store has newer progress from $($m.device) ($user $game $kind)"
+                return 'conflict'
+            }
+        }
+        CloudUpload $user $game $kind $bytes $at
+        SetBase $file $at; $S.Conflicts.Remove($key)
+        'ok'
+    }
+    # Before a newer family copy replaces a local save that still has play not sent anywhere, keep that local copy:
+    # snapshots go into the "Go back" list (On this computer), other saves into "<save>.kept".
+    function KeepLocal($file, $kind) {
+        if (-not (Test-Path -LiteralPath $file)) { return }
+        $base = GetBase $file
+        if ($null -ne $base -and (Ms $file) -le ($base + 1000)) { return }   # nothing unsent
+        if ($kind -eq 'state') {
+            for ($i = $SnapshotSlots - 1; $i -ge 1; $i--) { if (Test-Path -LiteralPath "$file.h$i") { Move-Item -LiteralPath "$file.h$i" "$file.h$($i + 1)" -Force } }
+            Copy-Item -LiteralPath $file "$file.h1" -Force
+        } else { Copy-Item -LiteralPath $file "$file.kept" -Force }
+        Log "kept unsent local copy before taking newer family save ($file)"
+    }
     function Log($m) { try { Add-Content $S.Log ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $m) } catch {} }
     # Player list as JSON text, always an array, never with a byte-order mark.
     function UsersJson() {
@@ -160,12 +199,17 @@ $handler = {
     function Backfill() {
         if (-not (CloudReady) -or -not (Test-Path $S.Saves)) { return }
         $have = @{}
-        try { Cloud 'arcade_saves?select=player,game,kind,updated_at' 'GET' $null 20 | Where-Object { $_ } | ForEach-Object { $have["$($_.player)|$($_.game)|$($_.kind)"] = (FromIso $_.updated_at) } } catch { Log "backfill list failed: $($_.Exception.Message)"; return }
+        $dev = @{}
+        try { Cloud 'arcade_saves?select=player,game,kind,updated_at,device' 'GET' $null 20 | Where-Object { $_ } | ForEach-Object { $k = "$($_.player)|$($_.game)|$($_.kind)"; $have[$k] = (FromIso $_.updated_at); $dev[$k] = "$($_.device)" } } catch { Log "backfill list failed: $($_.Exception.Message)"; return }
         $n = 0
         foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.state', '.slot1', '.slot2', '.slot3' }) {
             $user = $f.Directory.Name; $game = $f.BaseName; $kind = $f.Extension.TrimStart('.'); $at = Ms $f.FullName
-            if ($have["$user|$game|$kind"] -and $have["$user|$game|$kind"] -ge ($at - 1000)) { continue }
-            try { CloudUpload $user $game $kind ([IO.File]::ReadAllBytes($f.FullName)) $at; $n++ } catch { Log "backfill failed ($user $game $kind): $($_.Exception.Message)" }
+            $k = "$user|$game|$kind"
+            if ($have[$k] -and $have[$k] -ge ($at - 1000)) { continue }
+            # Another device saved since this computer last synced: keep both, do not overwrite the store.
+            $base = GetBase $f.FullName
+            if ($have[$k] -and $null -ne $base -and $have[$k] -gt ($base + 1000) -and $dev[$k] -ne $S.Device) { $S.Conflicts[$k] = $dev[$k]; Log "backfill kept local copy, newer family save from $($dev[$k]) ($user $game $kind)"; continue }
+            try { CloudUpload $user $game $kind ([IO.File]::ReadAllBytes($f.FullName)) $at; SetBase $f.FullName $at; $n++ } catch { Log "backfill failed ($user $game $kind): $($_.Exception.Message)" }
         }
         if ($n) { Log "backfill: uploaded $n save(s)" }
     }
@@ -286,6 +330,8 @@ $handler = {
             $file = Join-Path (Join-Path $S.Saves $user) "$game.$kind"
             if ($req.HttpMethod -eq 'POST') {
                 $data = ReadBody
+                $prevAt = Ms $file
+                $ck = "$user|$game|$kind"; if ($S.Conflicts[$ck]) { $res.AddHeader('X-Conflict', $S.Conflicts[$ck]) }
                 if ($data.Length -gt 0) {
                     $at = if ($q['at']) { [long]$q['at'] } else { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
                     if ($kind -eq 'state' -and (Test-Path $file)) {
@@ -300,12 +346,27 @@ $handler = {
                 }
                 SendJson @{ ok = $true; bytes = $data.Length }
                 try { $res.Close() } catch {}
-                if ($data.Length -gt 0 -and (CloudReady)) { try { CloudUpload $user $game $kind $data $at } catch { Log "upload failed ($game $kind): $($_.Exception.Message)" } }
+                if ($data.Length -gt 0 -and (CloudReady)) { try { $null = GuardedUpload $user $game $kind $data $at $file $prevAt } catch { Log "upload failed ($game $kind): $($_.Exception.Message)" } }
             } else {
                 $fromCloud = $false
                 if (CloudReady) {
-                    try { $n = CloudNewer $user $game $kind (Ms $file); if ($n) { WriteAtomic $file $n.bytes $n.at; $fromCloud = $true } }
-                    catch { Log "cloud check failed ($game $kind): $($_.Exception.Message)" }
+                    try {
+                        $local = Ms $file; $base = GetBase $file
+                        $m = CloudMeta $user $game $kind
+                        if ($m) {
+                            $cAt = FromIso $m.updated_at
+                            # Another device saved since this computer last synced: the family copy wins, this computer's copy is kept.
+                            $diverged = ($null -ne $base) -and ($cAt -gt ($base + 1000)) -and ("$($m.device)" -ne $S.Device)
+                            if ($cAt -gt ($local + 1000) -or $diverged) {
+                                $n = CloudNewer $user $game $kind -1
+                                if ($n) { KeepLocal $file $kind; WriteAtomic $file $n.bytes $n.at; SetBase $file $n.at; $fromCloud = $true; $S.Conflicts.Remove("$user|$game|$kind") }
+                            } elseif ($null -eq $base) {
+                                # First visit since the conflict guard arrived: take the store's current time as the synced version.
+                                SetBase $file $cAt
+                            }
+                        }
+                    }
+                    catch { Log "cloud check failed ($game $kind): $($_.Exception.Message)"; $res.AddHeader('X-Cloud', 'unreachable') }
                 }
                 if (Test-Path $file) {
                     $res.AddHeader('X-Saved-At', (Ms $file)); if ($fromCloud) { $res.AddHeader('X-From-Cloud', '1') }

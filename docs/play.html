@@ -56,18 +56,47 @@
   const g = await Store.game(gameId);
   if (!g) { document.getElementById('game').innerHTML = '<p style="padding:80px 20px">Game not found on this phone.</p>'; return; }
   const file = await Store.gameFile(g.id);
+  // Opening a game: first send this phone's unsent play for it. If another device saved since, the family copy
+  // wins and this phone's copy is kept (Go back list for snapshots). If the store cannot be reached, say so.
   const getSave = async kind => {
-    const local = await Store.getSave(userId, gameId, kind);
-    let remote = null;
-    try { remote = await Sync.fetchNewer(userId, gameId, kind, local && local.at); } catch (e) { console.warn('cloud check failed', e); }
-    if (remote) { await Store.putSave(userId, gameId, kind, remote.bytes, remote.at); return { ...remote, fromCloud: true }; }
-    return local;
+    let local = await Store.getSave(userId, gameId, kind);
+    let cloudUnreachable = false;
+    if (Sync.configured()) {
+      if (!Sync.ready()) cloudUnreachable = true;
+      else try {
+        let conflict = false;
+        if (local && (local.dirty || local.base === undefined)) {
+          const r = await Sync.upload(userId, gameId, kind, local.bytes, local.at, local.base !== undefined ? local.base : local.at);
+          if (r.result === 'ok') await Store.markSynced(userId, gameId, kind, local.at);
+          else if (r.result === 'conflict') conflict = true;
+          else if (r.result === 'error') cloudUnreachable = true;
+        }
+        const remote = conflict ? await Sync.fetchLatest(userId, gameId, kind) : await Sync.fetchNewer(userId, gameId, kind, local && local.at);
+        if (remote) {
+          await Store.keepLocal(userId, gameId, kind);
+          await Store.putSave(userId, gameId, kind, remote.bytes, remote.at, { dirty: false, base: remote.at });
+          return { ...remote, fromCloud: true };
+        }
+        if (local && local.base === undefined && !local.dirty) await Store.markSynced(userId, gameId, kind, local.at);
+      } catch (e) { console.warn('cloud check failed', e); cloudUnreachable = true; }
+    }
+    if (local) return { ...local, cloudUnreachable };
+    return cloudUnreachable ? { bytes: null, cloudUnreachable } : null;
   };
   ArcadePlayer({
     game: g, menuUrl: './#lib', dataPath: Store.EJS_DATA, gameUrl: URL.createObjectURL(file),
     getSave,
     peekSave: async kind => { const s = await Store.getSave(userId, gameId, kind); return s ? { at: s.at } : null; },
-    async putSave(kind, bytes, at) { await Store.putSave(userId, gameId, kind, bytes, at); Sync.upload(userId, gameId, kind, bytes, at); },
+    // Saved on the phone first; then sent to the family store unless another device saved newer progress there.
+    async putSave(kind, bytes, at) {
+      const prev = await Store.getSave(userId, gameId, kind);
+      await Store.putSave(userId, gameId, kind, bytes, at);
+      const base = prev ? (prev.base !== undefined ? prev.base : prev.at) : 0;
+      Sync.upload(userId, gameId, kind, bytes, at, base).then(async r => {
+        if (r.result === 'ok') await Store.markSynced(userId, gameId, kind, at);
+        else if (r.result === 'conflict' && this.notifyConflict) this.notifyConflict(r.device);
+      });
+    },
     async history() {
       const local = (await Store.snapshots(userId, gameId)).map(s => ({ id: 'local:' + s.slot, label: 'On this phone', at: s.at }));
       let remote = [];

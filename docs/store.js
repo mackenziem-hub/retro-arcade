@@ -107,8 +107,12 @@ const Store = {
   },
 
   // Saves. A state write also keeps a rollback snapshot every few minutes (3 slots, oldest dropped).
+  // Each save records base (the family store time it was last synced at) and dirty (play not sent to the store yet).
   async getSave(user, game, kind) { return (await get('saves', saveKey(user, game, kind))) || null; },
-  async putSave(user, game, kind, bytes, at) {
+  async putSave(user, game, kind, bytes, at, opts = {}) {
+    const prev = await get('saves', saveKey(user, game, kind));
+    const base = 'base' in opts ? opts.base : prev ? prev.base : undefined;
+    const dirty = 'dirty' in opts ? opts.dirty : true;
     if (kind === 'state') {
       const cur = await get('saves', saveKey(user, game, 'state'));
       const newest = await get('saves', saveKey(user, game, 'state.h1'));
@@ -120,7 +124,39 @@ const Store = {
         await put('saves', cur, saveKey(user, game, 'state.h1'));
       }
     }
-    return put('saves', { at, bytes }, saveKey(user, game, kind));
+    return put('saves', { at, bytes, base, dirty }, saveKey(user, game, kind));
+  },
+  // The store now holds this copy (uploaded, or confirmed the same).
+  async markSynced(user, game, kind, at) {
+    const k = saveKey(user, game, kind), cur = await get('saves', k);
+    if (!cur) return;
+    await put('saves', { ...cur, base: at, dirty: cur.at === at ? false : cur.dirty }, k);
+  },
+  // Before a family copy replaces a save with unsent play, keep that copy: snapshots go into the Go back list, others into "<kind>.kept".
+  async keepLocal(user, game, kind) {
+    const k = saveKey(user, game, kind), cur = await get('saves', k);
+    if (!cur || !(cur.dirty || cur.base === undefined)) return;
+    if (kind === 'state') {
+      for (let i = SNAPSHOT_SLOTS - 1; i >= 1; i--) {
+        const prev = await get('saves', saveKey(user, game, 'state.h' + i));
+        if (prev) await put('saves', prev, saveKey(user, game, 'state.h' + (i + 1)));
+      }
+      await put('saves', { at: cur.at, bytes: cur.bytes }, saveKey(user, game, 'state.h1'));
+    } else await put('saves', { at: cur.at, bytes: cur.bytes }, saveKey(user, game, kind + '.kept'));
+  },
+  // Saves with play not yet in the family store (records from before this tracking count too, once).
+  async unsentSaves() {
+    const d = await db();
+    return new Promise(res => {
+      const out = [], r = d.transaction('saves').objectStore('saves').openCursor();
+      r.onsuccess = () => {
+        const c = r.result;
+        if (!c) return res(out);
+        const [user, game, kind] = c.key.split('|');
+        if (['sram', 'state', 'slot1', 'slot2', 'slot3'].includes(kind) && (c.value.dirty || c.value.base === undefined)) out.push({ user, game, kind, save: c.value });
+        c.continue();
+      };
+    });
   },
   async snapshots(user, game) {
     const out = [];
