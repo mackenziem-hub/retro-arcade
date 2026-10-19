@@ -16,12 +16,24 @@
     <input type="text" id="userName" maxlength="20" placeholder="Name" autocomplete="off" required data-nav>
     <div class="colors" id="userColors"></div>
     <label class="check"><input type="checkbox" id="userKid" data-nav> Kid mode (bigger tiles, hidden games stay hidden)</label>
+    <button type="button" class="link" id="userPin" hidden data-nav>Change parent PIN</button>
     <div class="btns">
       <button type="button" class="btn danger" id="userDelete" hidden data-nav>Remove</button>
       <button type="button" class="btn" id="userCancel" data-cancel data-nav>Cancel</button>
       <button type="submit" class="btn primary" data-nav>Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="pinDlg">
+  <h3 id="pinTitle" style="margin-top:0">Parent PIN</h3>
+  <p class="hint" id="pinMsg"></p>
+  <div class="pin-dots" id="pinDots"></div>
+  <div class="pin-pad" id="pinPad"></div>
+  <div class="btns">
+    <button type="button" class="btn" id="pinCancel" data-cancel data-nav>Cancel</button>
+    <button type="button" class="btn primary" id="pinOk" data-nav>OK</button>
+  </div>
 </dialog>
 
 <dialog id="syncDlg">

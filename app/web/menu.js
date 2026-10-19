@@ -16,6 +16,7 @@ window.ArcadeMenu = function (backend) {
   const NATIVE = { gc: 'Dolphin', ps2: 'PCSX2', '3ds': 'Azahar' };
   const COLORS = ['#ff5d8f', '#ffc145', '#4ade80', '#38bdf8', '#a78bfa', '#fb923c', '#f472b6', '#e2e8f0'];
   const NEW_DAYS = 7;
+  const LOCK = 'arcade.kidLock';   // '1' while this device is locked to kid profiles
   const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
   const app = document.getElementById('app');
   const $ = id => document.getElementById(id);
@@ -45,6 +46,7 @@ window.ArcadeMenu = function (backend) {
     await load();
     const [view, sys] = location.hash.replace(/^#/, '').split('/');
     document.body.classList.toggle('kid', !!(me() && me().kid));
+    if (me() && me().kid) ls.set(LOCK, '1');
     if (!users.length) return renderWelcome();
     if (view === 'lib' && me()) return renderLibrary(sys || '');
     renderProfiles();
@@ -66,8 +68,9 @@ window.ArcadeMenu = function (backend) {
     $('welcomeForm').onsubmit = async e => {
       e.preventDefault();
       const name = $('welcomeName').value.trim(); if (!name) return;
-      all.push({ id: idFor(name), name, color: COLORS[3] }); await saveAll();
-      ls.set('arcade.user', idFor(name)); location.hash = 'lib'; route();
+      const id = idFor(name);   // work the id out once: a second call would see this player and add "-2"
+      all.push({ id, name, color: COLORS[3] }); await saveAll();
+      ls.set('arcade.user', id); location.hash = 'lib'; route();
     };
     const s = $('welcomeSync'); if (s) s.onclick = openSync;
     $('welcomeName').focus();
@@ -87,11 +90,13 @@ window.ArcadeMenu = function (backend) {
       <p class="hint">Right-click or press and hold a player to change them.
       ${sync ? (backend.sync.connected() ? 'Family saves on.' : `<button class="link" id="connect" data-nav>Connect family saves</button>`) : ''}</p>`;
     app.querySelectorAll('.profile[data-id]').forEach(b => {
-      b.onclick = () => { ls.set('arcade.user', b.dataset.id); location.hash = 'lib'; };
-      longPress(b, () => editUser(users.find(u => u.id === b.dataset.id)));
+      const u = users.find(x => x.id === b.dataset.id);
+      // A kid can switch to another kid; grown-up profiles need the parent PIN while the device is locked.
+      b.onclick = async () => { if (!u.kid && !(await parentOk())) return; ls.set('arcade.user', u.id); location.hash = 'lib'; };
+      longPress(b, async () => { if (await parentOk()) editUser(u); });
     });
-    $('addUser').onclick = () => editUser(null);
-    const c = $('connect'); if (c) c.onclick = openSync;
+    $('addUser').onclick = async () => { if (await parentOk()) editUser(null); };
+    const c = $('connect'); if (c) c.onclick = async () => { if (await parentOk()) openSync(); };
     ArcadeNav.focusFirst();
   }
 
@@ -111,6 +116,7 @@ window.ArcadeMenu = function (backend) {
     $('userName').value = u ? u.name : '';
     $('userKid').checked = !!(u && u.kid);
     $('userDelete').hidden = !u || users.length < 2;
+    $('userPin').hidden = !settings().pin;
     const c = $('userColors');
     c.innerHTML = COLORS.map(col => `<button type="button" data-c="${col}" style="background:${col}" class="${col === pickedColor ? 'on' : ''}" aria-label="colour" data-nav></button>`).join('');
     c.querySelectorAll('button').forEach(b => b.onclick = () => { pickedColor = b.dataset.c; c.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
@@ -121,10 +127,71 @@ window.ArcadeMenu = function (backend) {
   $('userForm').onsubmit = async e => {
     e.preventDefault();
     const name = $('userName').value.trim(); if (!name) return;
+    let kid = $('userKid').checked;
+    if (kid && !settings().pin) {
+      dlg.close();
+      if (!(await choosePin())) { kid = false; toast('Kid mode needs a parent PIN, so it was left off.', 6000); }
+    }
     if (!editing) { editing = { id: idFor(name) }; all.push(editing); }
-    editing.name = name; editing.color = pickedColor; editing.kid = $('userKid').checked || undefined;
+    editing.name = name; editing.color = pickedColor; editing.kid = kid || undefined;
     await saveAll(); dlg.close(); route();
   };
+  $('userPin').onclick = async () => { dlg.close(); if (await choosePin()) { await saveAll(); toast('Parent PIN changed.'); } };
+
+  // ---------- Parent PIN ----------
+  // Once a kid profile is used on a device, the device stays locked: picking a grown-up profile, changing or adding
+  // players, and family-save settings ask for the parent PIN. Only a SHA-256 hash of the PIN is kept, in the synced
+  // player list, so every device uses the same PIN.
+  function pinHash(pin) {
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode('retro-arcade-pin:' + pin))
+      .then(h => [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''));
+  }
+  const locked = () => ls.get(LOCK) === '1' && !!settings().pin;
+  const pinDlg = $('pinDlg');
+  // Number pad that works with touch, mouse, number keys and a controller. Resolves the digits, or null if cancelled.
+  function askPin(title, msg) {
+    return new Promise(resolve => {
+      let v = '';
+      const dots = () => { $('pinDots').textContent = v ? '\u25CF'.repeat(v.length) : '\u00a0'; };
+      $('pinTitle').textContent = title; $('pinMsg').textContent = msg || '';
+      $('pinPad').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '\u232B', '0']
+        .map(k => `<button type="button" class="btn pin-key" data-k="${k}" data-nav>${k}</button>`).join('');
+      const press = k => { if (k === '\u232B') v = v.slice(0, -1); else if (v.length < 8) v += k; dots(); };
+      const onKey = e => {
+        if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
+        else if (e.key === 'Backspace') { e.preventDefault(); press('\u232B'); }
+        else if (e.key === 'Enter') { e.preventDefault(); $('pinOk').click(); }
+      };
+      const done = r => { document.removeEventListener('keydown', onKey, true); pinDlg.close(); resolve(r); };
+      $('pinPad').querySelectorAll('button').forEach(b => b.onclick = () => press(b.dataset.k));
+      $('pinOk').onclick = () => { if (v.length >= 4) done(v); else $('pinMsg').textContent = 'Use at least 4 digits.'; };
+      $('pinCancel').onclick = () => done(null);
+      pinDlg.oncancel = e => { e.preventDefault(); done(null); };
+      document.addEventListener('keydown', onKey, true);
+      dots(); pinDlg.showModal(); ArcadeNav.focusFirst();
+    });
+  }
+  // True when a grown-up may go ahead: the device is not locked, or the right PIN was entered (which unlocks it).
+  async function parentOk() {
+    if (!locked()) return true;
+    let msg = 'This device is in kid mode. A grown-up can unlock it.';
+    for (;;) {
+      const pin = await askPin('Parent PIN', msg);
+      if (pin === null) return false;
+      if (await pinHash(pin) === settings().pin) { ls.set(LOCK, ''); return true; }
+      msg = 'That PIN is not right. Try again.';
+    }
+  }
+  async function choosePin() {
+    for (;;) {
+      const a = await askPin('Choose a parent PIN', 'Kid mode uses it to keep grown-up profiles and settings locked. 4 to 8 digits.');
+      if (a === null) return false;
+      const b = await askPin('Type the PIN again');
+      if (b === null) return false;
+      if (a === b) { settings().pin = await pinHash(a); return true; }
+      toast('The two PINs did not match. Try again.');
+    }
+  }
 
   // ---------- Family saves ----------
   const syncDlg = $('syncDlg');
