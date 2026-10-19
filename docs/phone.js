@@ -39,10 +39,15 @@ const backend = {
   sync: {
     available: !!cloud.url,
     connected: () => Sync.configured(),
-    async connect(code) {
+    async connect(code, create) {
       Sync.configure(cloud.url, cloud.key, code);
       try {
         await Sync.test();
+        // A typo must not quietly start an empty family: unknown codes need the separate "Start a new family" choice.
+        if (!create && !(await Sync.familyExists())) {
+          Sync.configure(cloud.url, cloud.key, '');
+          return { ok: false, unknown: true, error: 'No family uses that code. Check it for typos. If you are starting family saves for the first time, choose Start a new family.' };
+        }
         // First connection: take the family's player list if there is one, otherwise share this phone's.
         const pulled = await Sync.pullProfiles(0);
         if (pulled) await Store.replaceUsers(pulled.users, pulled.at);

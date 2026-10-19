@@ -45,6 +45,7 @@
     <div class="btns">
       <button type="button" class="btn danger" id="syncDisconnect" hidden data-nav>Disconnect</button>
       <button type="button" class="btn" id="syncCancel" data-cancel data-nav>Close</button>
+      <button type="button" class="btn" id="syncCreate" hidden data-nav>Start a new family</button>
       <button type="submit" class="btn primary" data-nav>Connect</button>
     </div>
   </form>
@@ -77,7 +78,7 @@ const backend = {
   sync: {
     get available() { return syncState.available; },
     connected: () => syncState.connected,
-    connect: code => json('/api/sync', { method: 'POST', body: JSON.stringify({ code }) }),
+    connect: (code, create) => json('/api/sync', { method: 'POST', body: JSON.stringify({ code, create: !!create }) }),
     disconnect: () => json('/api/sync', { method: 'POST', body: JSON.stringify({ code: '' }) }),
   },
 };

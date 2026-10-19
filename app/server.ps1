@@ -421,9 +421,16 @@ $handler = {
                 $code = "$($body.code)".Trim()
                 if (-not $S.Cloud.url) { SendJson @{ ok = $false; error = 'This arcade has no family store set up.' }; return }
                 if ($code -and $code.Length -lt 8) { SendJson @{ ok = $false; error = 'The family code needs at least 8 characters.' }; return }
+                $prevFamily = $S.Family   # a failed attempt leaves the current connection as it was
                 $S.Family = $code
                 if ($code) {
-                    try { Cloud 'arcade_recent?select=game&limit=1' 'GET' $null 10 | Out-Null } catch { $S.Family = ''; SendJson @{ ok = $false; error = 'Could not reach the family store. Check the internet connection and the code.' }; return }
+                    # A code only connects when a family already uses it (it has a player list or saves), so a typo
+                    # cannot quietly start an empty family. Starting a new family is a separate, deliberate choice.
+                    try {
+                        $known = @(Cloud 'arcade_profiles?select=family' 'GET' $null 10 | Where-Object { $null -ne $_ }).Count -gt 0
+                        if (-not $known) { $known = @(Cloud 'arcade_saves?select=game&limit=1' 'GET' $null 10 | Where-Object { $null -ne $_ }).Count -gt 0 }
+                    } catch { $S.Family = $prevFamily; SendJson @{ ok = $false; error = 'Could not reach the family store. Check the internet connection and try again.' }; return }
+                    if (-not $known -and -not $body.create) { $S.Family = $prevFamily; SendJson @{ ok = $false; unknown = $true; error = 'No family uses that code. Check it for typos. If you are starting family saves for the first time, choose Start a new family.' }; return }
                     # First connection: take the family's player list if there is one, otherwise share ours.
                     try {
                         $row = @(Cloud 'arcade_profiles?select=data,updated_at' 'GET' $null 8 | Where-Object { $null -ne $_ })

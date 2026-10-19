@@ -70,6 +70,11 @@ const Sync = (() => {
     load, ready: () => ready(), configured: () => !!(cfg.url && cfg.key && cfg.family), deviceId: () => deviceId,
     configure(url, key, family) { Object.assign(cfg, { url, key, family }); hashCache = null; ls.set('arcade.sync', JSON.stringify(cfg)); },
     async test() { await rest('arcade_recent?select=game&limit=1'); return true; },
+    // True when a family already uses the current code (it has a player list or saves). Throws when offline.
+    async familyExists() {
+      if ((await rest('arcade_profiles?select=family', {}, 10000) || []).length) return true;
+      return (await rest('arcade_saves?select=game&limit=1', {}, 10000) || []).length > 0;
+    },
     upload,
     // Sends every save this phone has not sent yet (played offline, or before this tracking existed).
     // Older records with no sync time are only sent when they are newer than the store's copy.

@@ -201,6 +201,7 @@ window.ArcadeMenu = function (backend) {
     $('syncCode').value = '';
     $('syncStatus').textContent = on ? 'Connected. Saves and players are shared with the family.' : 'Enter the family code to share saves between devices.';
     $('syncDisconnect').hidden = !on;
+    $('syncCreate').hidden = true;
     $('syncCode').parentElement.querySelector('.btn.primary').hidden = on;
     $('syncCode').hidden = on;
     const extra = $('syncExtras'); extra.innerHTML = '';
@@ -209,15 +210,20 @@ window.ArcadeMenu = function (backend) {
   }
   $('syncCancel').onclick = () => syncDlg.close();
   $('syncDisconnect').onclick = async () => { await backend.sync.disconnect(); syncDlg.close(); toast('Family saves disconnected.'); route(); };
-  $('syncForm').onsubmit = async e => {
-    e.preventDefault();
+  // Connect only joins a family that already uses the code. "Start a new family" appears when no family does,
+  // so a typo is caught instead of quietly sending saves to an empty family.
+  async function connectSync(create) {
     const code = $('syncCode').value.trim();
     if (code.length < 8) { $('syncStatus').textContent = 'The family code needs at least 8 characters.'; return; }
-    $('syncStatus').textContent = 'Connecting...';
-    const r = await backend.sync.connect(code);
+    $('syncStatus').textContent = create ? 'Starting a new family...' : 'Connecting...';
+    const r = await backend.sync.connect(code, create);
+    $('syncCreate').hidden = !(r && r.unknown);
     if (!r.ok) { $('syncStatus').textContent = r.error || 'Could not connect. Check the internet connection and the code.'; return; }
-    syncDlg.close(); toast('Family saves connected.'); route();
-  };
+    syncDlg.close(); toast(create ? 'New family started. Use the same code on your other devices.' : 'Family saves connected.', 6000); route();
+  }
+  $('syncForm').onsubmit = e => { e.preventDefault(); connectSync(false); };
+  $('syncCreate').onclick = () => connectSync(true);
+  $('syncCode').addEventListener('input', () => { $('syncCreate').hidden = true; });
 
   // ---------- Library ----------
   async function renderLibrary(sys) {

@@ -85,3 +85,7 @@ alter table arcade_saves add constraint arcade_saves_kind_check check (kind in (
 -- so every update of an existing save failed with 42501 (HTTP 401). Run the trigger as its owner instead.
 alter function arcade_keep_history() security definer set search_path = public;
 revoke execute on function arcade_keep_history() from public, anon, authenticated;
+
+-- 2026-10-19: the "Continue playing" view ran with its owner's rights, so it ignored row level security: any code
+-- looked valid and every family's player and game names were visible. Make it run as the caller.
+alter view arcade_recent set (security_invoker = true);
