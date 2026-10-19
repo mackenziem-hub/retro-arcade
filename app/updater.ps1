@@ -15,7 +15,8 @@ try {
 
     $verFile = Join-Path $AppDir 'version.txt'
     $local = if (Test-Path $verFile) { (Get-Content $verFile -Raw).Trim() } else { '' }
-    if ($manifest.version -eq $local) { return }
+    # Never go backwards: right after a publish, GitHub can serve the previous manifest for a few minutes.
+    if ($local -and [string]::CompareOrdinal($manifest.version, $local) -le 0) { return }
 
     # Only these files may ever be replaced by an update.
     $allowed = '^(app/(web/[A-Za-z0-9._-]+|server\.ps1|updater\.ps1|fetch-covers\.ps1)|READ ME FIRST\.txt|PHONE SETUP \(Android\)\.txt|Copy to Drive\.ps1)$'
