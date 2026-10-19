@@ -80,3 +80,8 @@ grant select on arcade_recent to anon, authenticated;
 -- 2026-10-18: manual save slots.
 alter table arcade_saves drop constraint if exists arcade_saves_kind_check;
 alter table arcade_saves add constraint arcade_saves_kind_check check (kind in ('sram', 'state', 'slot1', 'slot2', 'slot3'));
+
+-- 2026-10-19: the history trigger runs as the caller (anon), and arcade_save_history only allows select,
+-- so every update of an existing save failed with 42501 (HTTP 401). Run the trigger as its owner instead.
+alter function arcade_keep_history() security definer set search_path = public;
+revoke execute on function arcade_keep_history() from public, anon, authenticated;
