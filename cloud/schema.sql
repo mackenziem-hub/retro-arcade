@@ -89,3 +89,32 @@ revoke execute on function arcade_keep_history() from public, anon, authenticate
 -- 2026-10-19: the "Continue playing" view ran with its owner's rights, so it ignored row level security: any code
 -- looked valid and every family's player and game names were visible. Make it run as the caller.
 alter view arcade_recent set (security_invoker = true);
+
+-- 2026-10-20: desktop emulator saves (GameCube, PS2, 3DS) are stored as kind 'native' (a zip of the game's save files).
+alter table arcade_saves drop constraint if exists arcade_saves_kind_check;
+alter table arcade_saves add constraint arcade_saves_kind_check check (kind in ('sram', 'state', 'slot1', 'slot2', 'slot3', 'native'));
+
+-- 2026-10-20: deeper history for in-game saves (small): every version from the last 2 days plus the newest version of
+-- each day for 60 days, so a save that went bad days ago can still be brought back. Snapshots (large) keep the last 3.
+create or replace function arcade_keep_history() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into arcade_save_history (family, player, game, kind, data, size, device, updated_at)
+    values (old.family, old.player, old.game, old.kind, old.data, old.size, old.device, old.updated_at);
+  if old.kind in ('sram', 'native') then
+    delete from arcade_save_history h
+     where h.family = old.family and h.player = old.player and h.game = old.game and h.kind = old.kind
+       and h.updated_at < now() - interval '2 days'
+       and (h.updated_at < now() - interval '60 days'
+            or h.id not in (select distinct on (date_trunc('day', updated_at)) id from arcade_save_history
+                             where family = old.family and player = old.player and game = old.game and kind = old.kind
+                             order by date_trunc('day', updated_at), updated_at desc));
+  else
+    delete from arcade_save_history h
+     where h.family = old.family and h.player = old.player and h.game = old.game and h.kind = old.kind
+       and h.id not in (select id from arcade_save_history
+                         where family = old.family and player = old.player and game = old.game and kind = old.kind
+                         order by updated_at desc limit 3);
+  end if;
+  return new;
+end $$;
+revoke execute on function arcade_keep_history() from public, anon, authenticated;

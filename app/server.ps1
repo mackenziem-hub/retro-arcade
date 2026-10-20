@@ -4,6 +4,7 @@
 param([switch]$NoBrowser)
 
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 $AppDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Root    = Split-Path -Parent $AppDir
 $cfgPath = Join-Path $Root 'config.json'
@@ -15,6 +16,7 @@ if (-not [IO.Path]::IsPathRooted($gamesDir)) { $gamesDir = Join-Path $Root $game
 $State = [hashtable]::Synchronized(@{
     Web    = Join-Path $AppDir 'web'
     Games  = [IO.Path]::GetFullPath($gamesDir)
+    Root   = $Root
     Saves  = Join-Path $Root 'saves'
     Covers = Join-Path $Root 'covers'
     Users  = Join-Path $Root 'users.json'
@@ -202,8 +204,8 @@ $handler = {
         $dev = @{}
         try { Cloud 'arcade_saves?select=player,game,kind,updated_at,device' 'GET' $null 20 | Where-Object { $_ } | ForEach-Object { $k = "$($_.player)|$($_.game)|$($_.kind)"; $have[$k] = (FromIso $_.updated_at); $dev[$k] = "$($_.device)" } } catch { Log "backfill list failed: $($_.Exception.Message)"; return }
         $n = 0
-        foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.state', '.slot1', '.slot2', '.slot3' }) {
-            $user = $f.Directory.Name; $game = $f.BaseName; $kind = $f.Extension.TrimStart('.'); $at = Ms $f.FullName
+        foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.state', '.slot1', '.slot2', '.slot3', '.native-save' }) {
+            $user = $f.Directory.Name; $game = $f.BaseName; $kind = $f.Extension.TrimStart('.') -replace '^native-save$', 'native'; $at = Ms $f.FullName
             $k = "$user|$game|$kind"
             if ($have[$k] -and $have[$k] -ge ($at - 1000)) { continue }
             # Another device saved since this computer last synced: keep both, do not overwrite the store.
@@ -213,6 +215,175 @@ $handler = {
         }
         if ($n) { Log "backfill: uploaded $n save(s)" }
     }
+    # A newer family copy replaces the local save (the local copy is kept if it held unsent play). Returns $true when it did.
+    function PullNewer($user, $game, $kind, $file) {
+        $local = Ms $file; $base = GetBase $file
+        $m = CloudMeta $user $game $kind
+        if (-not $m) { return $false }
+        $cAt = FromIso $m.updated_at
+        # Another device saved since this computer last synced: the family copy wins, this computer's copy is kept.
+        $diverged = ($null -ne $base) -and ($cAt -gt ($base + 1000)) -and ("$($m.device)" -ne $S.Device)
+        if ($cAt -gt ($local + 1000) -or $diverged) {
+            $n = CloudNewer $user $game $kind -1
+            if ($n) { KeepLocal $file $kind; WriteAtomic $file $n.bytes $n.at; SetBase $file $n.at; $S.Conflicts.Remove("$user|$game|$kind"); return $true }
+        } elseif ($null -eq $base) {
+            # First visit since the conflict guard arrived: take the store's current time as the synced version.
+            SetBase $file $cAt
+        }
+        $false
+    }
+
+    # ---- desktop emulator saves (GameCube, PS2, 3DS) ----
+    # Those emulators keep saves in their own folders, shared by everyone and on one computer only. The arcade owns them
+    # instead: each player's saves for a game live in saves\<player>\<game>.native-save (a zip). They are put in place just
+    # before the emulator opens, collected every minute while it runs and when it closes, versioned on this computer and
+    # sent to the family store like any other save. Files are never deleted without a copy somewhere.
+    $EmuFull = [IO.Path]::GetFullPath($Emu).TrimEnd('\')
+    $NativeDir = Join-Path $S.Saves '_native'
+    $NativeProc = @{ gc = 'Dolphin'; ps2 = 'pcsx2-qt'; '3ds' = 'azahar' }
+    function ReadJson($f) { if (Test-Path -LiteralPath $f) { try { return ([IO.File]::ReadAllText($f) | ConvertFrom-Json) } catch {} }; $null }
+    function WriteJson($f, $o) { New-Item -ItemType Directory -Force (Split-Path $f) | Out-Null; [IO.File]::WriteAllText($f, (ConvertTo-Json $o -Compress)) }
+    # Where a game's saves live inside the emulator folder: the folder, and which files in it belong to the game.
+    function NativeSpec($g) {
+        if ($g.system -eq 'gc') {
+            # The disc's game ID (GALE01 = code GALE, maker 01) names its memory card files: 01-GALE-*.gci
+            $ids = ReadJson (Join-Path $NativeDir 'gameids.json'); if (-not $ids) { $ids = [pscustomobject]@{} }
+            $key = "$($g.path)|$((Get-Item -LiteralPath $g.path).Length)"
+            $id = $ids.$key
+            if (-not $id) {
+                $out = & (Join-Path $EmuFull 'Dolphin\DolphinTool.exe') header -i $g.path 2>$null
+                $gid = (($out | Where-Object { $_ -match '^Game ID:' }) -replace '^Game ID:\s*', '').Trim()
+                $reg = (($out | Where-Object { $_ -match '^Region:' }) -replace '^Region:\s*', '').Trim()
+                if ($gid.Length -ne 6) { throw "Could not read the game ID of $($g.title)" }
+                $id = [pscustomobject]@{ gid = $gid; region = $reg }
+                $ids | Add-Member -NotePropertyName $key -NotePropertyValue $id -Force
+                WriteJson (Join-Path $NativeDir 'gameids.json') $ids
+            }
+            $folder = switch ($id.region) { 'PAL' { 'EUR' } 'NTSC-J' { 'JAP' } default { 'USA' } }
+            $prefix = $id.gid.Substring(4, 2) + '-' + $id.gid.Substring(0, 4) + '-'
+            return @{ dir = (Join-Path $EmuFull "Dolphin\User\GC\$folder\Card A"); match = { param($n) $n.StartsWith($prefix) -and $n.EndsWith('.gci') }.GetNewClosure() }
+        }
+        if ($g.system -eq '3ds') {
+            # Installed titles: ...\title\00040000\<id>\content\*.app. Cartridge files carry the title ID in their header.
+            $tid = $null
+            if ($g.path -match '\\title\\00040000\\([0-9a-f]{8})\\content\\') { $tid = $Matches[1] }
+            else {
+                $fs = [IO.File]::OpenRead($g.path); try { $h = New-Object byte[] 0x110; $null = $fs.Read($h, 0, $h.Length) } finally { $fs.Dispose() }
+                $tid = '{0:x8}' -f [BitConverter]::ToUInt32($h, 0x108)
+            }
+            return @{ dir = (Join-Path $EmuFull "Azahar\user\sdmc\Nintendo 3DS\00000000000000000000000000000000\00000000000000000000000000000000\title\00040000\$tid\data"); match = { param($n) $true } }
+        }
+        if ($g.system -eq 'ps2') { return @{ dir = (Join-Path $EmuFull 'PCSX2\memcards'); match = { param($n) $n -eq 'Mcd001.ps2' } } }
+        $null
+    }
+    function NativeFiles($spec) {
+        if (-not (Test-Path -LiteralPath $spec.dir)) { return @() }
+        @(Get-ChildItem -LiteralPath $spec.dir -Recurse -File | Where-Object { & $spec.match $_.Name } | Sort-Object FullName | ForEach-Object { $_.FullName })
+    }
+    function NativeHash($files) {
+        $sha = [Security.Cryptography.SHA256]::Create(); $ms = New-Object IO.MemoryStream
+        foreach ($f in $files) { $n = [Text.Encoding]::UTF8.GetBytes($f.Substring($EmuFull.Length)); $ms.Write($n, 0, $n.Length); $b = [IO.File]::ReadAllBytes($f); $ms.Write($b, 0, $b.Length) }
+        ([BitConverter]::ToString($sha.ComputeHash($ms.ToArray())) -replace '-', '')
+    }
+    function Pack($files) {
+        $ms = New-Object IO.MemoryStream
+        $zip = New-Object IO.Compression.ZipArchive($ms, [IO.Compression.ZipArchiveMode]::Create, $true)
+        foreach ($f in $files) {
+            $e = $zip.CreateEntry(($f.Substring($EmuFull.Length).TrimStart('\') -replace '\\', '/'), [IO.Compression.CompressionLevel]::Optimal)
+            $e.LastWriteTime = (Get-Item -LiteralPath $f).LastWriteTime
+            $s = $e.Open(); $b = [IO.File]::ReadAllBytes($f); $s.Write($b, 0, $b.Length); $s.Dispose()
+        }
+        $zip.Dispose(); ,$ms.ToArray()
+    }
+    function Unpack($bytes, $spec) {
+        $zip = New-Object IO.Compression.ZipArchive((New-Object IO.MemoryStream(,$bytes)), [IO.Compression.ZipArchiveMode]::Read)
+        $dirFull = [IO.Path]::GetFullPath($spec.dir).TrimEnd('\') + '\'
+        try {
+            foreach ($e in $zip.Entries) {
+                if (-not $e.Name) { continue }
+                $dest = [IO.Path]::GetFullPath((Join-Path $EmuFull ($e.FullName -replace '/', '\')))
+                if (-not $dest.StartsWith($dirFull, [StringComparison]::OrdinalIgnoreCase)) { continue }   # only this game's save folder
+                New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
+                $out = New-Object IO.MemoryStream; $s = $e.Open(); $s.CopyTo($out); $s.Dispose()
+                [IO.File]::WriteAllBytes($dest, $out.ToArray())
+                (Get-Item -LiteralPath $dest).LastWriteTime = $e.LastWriteTime.DateTime
+            }
+        } finally { $zip.Dispose() }
+    }
+    function OwnerFile($g) { Join-Path $NativeDir "owner-$($g.system)-$($g.id).json" }
+    # Collect the game's saves from the emulator folder into the player's save (only when they changed).
+    function NativeCapture($user, $g) {
+        $spec = NativeSpec $g; $files = NativeFiles $spec
+        if (-not $files.Count) { return }
+        $hash = NativeHash $files
+        $file = Join-Path (Join-Path $S.Saves $user) "$($g.id).native-save"
+        $o = ReadJson (OwnerFile $g)
+        if ($o -and $o.user -eq $user -and $o.hash -eq $hash -and (Test-Path -LiteralPath $file)) { return }
+        $bytes = Pack $files
+        $prevAt = Ms $file; $at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        # Older versions on this computer: one every 10 minutes at most, the last 10 kept (h1 newest).
+        if (Test-Path -LiteralPath $file) {
+            $h1 = "$file.h1"
+            if (-not (Test-Path -LiteralPath $h1) -or ($prevAt - (Ms $h1)) -ge 600000) {
+                for ($i = 9; $i -ge 1; $i--) { if (Test-Path -LiteralPath "$file.h$i") { Move-Item -LiteralPath "$file.h$i" "$file.h$($i + 1)" -Force } }
+                Copy-Item -LiteralPath $file $h1 -Force
+            }
+        }
+        WriteAtomic $file $bytes $at
+        WriteJson (OwnerFile $g) @{ user = $user; hash = $hash }
+        Log "saved $user $($g.id) from the emulator ($($files.Count) file(s))"
+        if (CloudReady) { try { $null = GuardedUpload $user $g.id 'native' $bytes $at $file $prevAt } catch { Log "upload failed ($($g.id) native): $($_.Exception.Message)" } }
+    }
+    # Put the player's saves for this game in place (newest family copy first). Whatever was there is kept unless it is
+    # already safely stored as someone's save.
+    function NativeSwapIn($user, $g) {
+        $spec = NativeSpec $g
+        $file = Join-Path (Join-Path $S.Saves $user) "$($g.id).native-save"
+        if (CloudReady) { try { $null = PullNewer $user $g.id 'native' $file } catch { Log "cloud check failed ($($g.id) native): $($_.Exception.Message)" } }
+        $files = NativeFiles $spec
+        if ($files.Count) {
+            $o = ReadJson (OwnerFile $g)
+            if (-not $o -or $o.hash -ne (NativeHash $files)) {
+                $keep = Join-Path $S.Root ("backups\native\{0:yyyy-MM-dd-HHmmss}-{1}-{2}" -f (Get-Date), $g.system, $g.id)
+                foreach ($f in $files) { $d = Join-Path $keep $f.Substring($EmuFull.Length).TrimStart('\'); New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null; Copy-Item -LiteralPath $f $d -Force }
+                Log "kept unclaimed emulator saves for $($g.id) in $keep"
+            }
+            foreach ($f in $files) { Remove-Item -LiteralPath $f -Force }
+        }
+        if (Test-Path -LiteralPath $file) { Unpack ([IO.File]::ReadAllBytes($file)) $spec }
+        $now = NativeFiles $spec
+        WriteJson (OwnerFile $g) @{ user = $user; hash = $(if ($now.Count) { NativeHash $now } else { '' }) }
+    }
+    function SessionFile($sys) { Join-Path $NativeDir "session-$sys.json" }
+    # While the emulator runs, collect saves every minute; collect once more when it closes.
+    function NativeWatch($sess, $g, $proc) {
+        try {
+            while (-not $proc.HasExited) { $null = $proc.WaitForExit(60000); try { NativeCapture $sess.user $g } catch { Log "save collect failed ($($g.id)): $($_.Exception.Message)" } }
+            Start-Sleep -Seconds 2
+            NativeCapture $sess.user $g
+            Remove-Item -LiteralPath (SessionFile $g.system) -Force -ErrorAction SilentlyContinue
+        } catch { Log "save collect failed ($($g.id)): $($_.Exception.Message)" }
+    }
+    function NativeRunning($sys) { @(Get-Process -Name $NativeProc[$sys] -ErrorAction SilentlyContinue) }
+    # Daily copy of every in-game save and player list on this computer (backups\saves, last 30 days).
+    function Vault() {
+        $dir = Join-Path $S.Root 'backups\saves'; New-Item -ItemType Directory -Force $dir | Out-Null
+        $zipPath = Join-Path $dir ("saves-{0:yyyy-MM-dd}.zip" -f (Get-Date))
+        if (Test-Path $zipPath) { return }
+        $fs = [IO.File]::Open("$zipPath.tmp", 'Create')
+        $zip = New-Object IO.Compression.ZipArchive($fs, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $base = [IO.Path]::GetFullPath($S.Saves).TrimEnd('\')
+            foreach ($f in Get-ChildItem $S.Saves -Recurse -File | Where-Object { $_.Extension -in '.sram', '.native-save', '.kept' -or $_.Name -eq 'gameids.json' }) {
+                $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, ('saves/' + ($f.FullName.Substring($base.Length).TrimStart('\') -replace '\\', '/')))
+            }
+            if (Test-Path $S.Users) { $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $S.Users, 'users.json') }
+        } finally { $zip.Dispose(); $fs.Dispose() }
+        Move-Item "$zipPath.tmp" $zipPath -Force
+        Get-ChildItem $dir -Filter 'saves-*.zip' | Sort-Object Name -Descending | Select-Object -Skip 30 | Remove-Item -Force
+        Log "daily save backup written ($zipPath)"
+    }
+
     function Dirty() { $m = "$($S.Users).meta"; if (Test-Path $m) { Get-Content $m -Raw | ConvertFrom-Json } else { [pscustomobject]@{ at = 0; dirty = $false } } }
     function SetDirty($at, $dirty) { ConvertTo-Json @{ at = $at; dirty = $dirty } -Compress | Set-Content "$($S.Users).meta" -Encoding ASCII }
 
@@ -290,12 +461,50 @@ $handler = {
                     [IO.File]::WriteAllText($ini, $txt)
                 }
             }
-            Start-Process $exe -ArgumentList ($n.args -f $g.path) -WorkingDirectory (Split-Path $exe)
-            if ($user) {
-                $dir = Join-Path $S.Saves $user; New-Item -ItemType Directory -Force $dir | Out-Null
-                [IO.File]::WriteAllText((Join-Path $dir "$($g.id).native"), (Get-Date -Format o))
+            if (-not $user) { Send 400 $null; return }
+            # One game per emulator at a time, so the right player's saves are in place.
+            $sf = SessionFile $g.system
+            if ((NativeRunning $g.system).Count) {
+                SendJson @{ ok = $false; error = 'Another game is still open in that emulator. Close it first, then try again.' }; return
             }
+            # Collect the last session first if the arcade was closed before the emulator was.
+            $old = ReadJson $sf
+            if ($old) {
+                $og = GetLibrary | Where-Object { $_.id -eq $old.game } | Select-Object -First 1
+                if ($og) { NativeCapture $old.user $og }
+                Remove-Item -LiteralPath $sf -Force
+            }
+            try { NativeSwapIn $user $g } catch { Log "save swap failed ($($g.id)): $($_.Exception.Message)"; SendJson @{ ok = $false; error = 'Could not get your saves ready for this game, so it was not opened. Your saves are safe.' }; return }
+            $proc = Start-Process $exe -ArgumentList ($n.args -f $g.path) -WorkingDirectory (Split-Path $exe) -PassThru
+            $sess = @{ user = $user; game = $g.id; at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
+            WriteJson $sf $sess
+            $dir = Join-Path $S.Saves $user; New-Item -ItemType Directory -Force $dir | Out-Null
+            [IO.File]::WriteAllText((Join-Path $dir "$($g.id).native"), (Get-Date -Format o))
             SendJson @{ ok = $true }
+            try { $res.Close() } catch {}
+            NativeWatch ([pscustomobject]$sess) $g $proc
+        }
+        elseif ($path -eq '/api/native' -and $q['collect']) {
+            # On start: finish any session the arcade was closed during, and write the daily save backup.
+            SendJson @{ ok = $true }
+            try { $res.Close() } catch {}
+            try { Vault } catch { Log "daily save backup failed: $($_.Exception.Message)" }
+            foreach ($sys in @($NativeProc.Keys)) {
+                $sess = ReadJson (SessionFile $sys); if (-not $sess) { continue }
+                $g = GetLibrary | Where-Object { $_.id -eq $sess.game } | Select-Object -First 1
+                if (-not $g) { Remove-Item -LiteralPath (SessionFile $sys) -Force; continue }
+                $p = NativeRunning $sys
+                if ($p.Count) { NativeWatch $sess $g $p[0] } else { try { NativeCapture $sess.user $g } catch { Log "save collect failed ($($g.id)): $($_.Exception.Message)" }; Remove-Item -LiteralPath (SessionFile $sys) -Force }
+            }
+            # Saves made before the arcade looked after them belong to whoever opened that game last.
+            foreach ($g in @(GetLibrary | Where-Object { $_.native })) {
+                try {
+                    if ((Test-Path -LiteralPath (OwnerFile $g)) -or (Test-Path -LiteralPath (SessionFile $g.system))) { continue }
+                    if (-not (NativeFiles (NativeSpec $g)).Count) { continue }
+                    $last = Get-ChildItem $S.Saves -Recurse -File -Filter "$($g.id).native" -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "$($g.id).native" } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+                    if ($last) { NativeCapture $last.Directory.Name $g }
+                } catch { Log "save hand-over failed ($($g.id)): $($_.Exception.Message)" }
+            }
         }
         elseif ($path -eq '/api/users') {
             $res.AddHeader('Cache-Control', 'no-store')
@@ -350,22 +559,7 @@ $handler = {
             } else {
                 $fromCloud = $false
                 if (CloudReady) {
-                    try {
-                        $local = Ms $file; $base = GetBase $file
-                        $m = CloudMeta $user $game $kind
-                        if ($m) {
-                            $cAt = FromIso $m.updated_at
-                            # Another device saved since this computer last synced: the family copy wins, this computer's copy is kept.
-                            $diverged = ($null -ne $base) -and ($cAt -gt ($base + 1000)) -and ("$($m.device)" -ne $S.Device)
-                            if ($cAt -gt ($local + 1000) -or $diverged) {
-                                $n = CloudNewer $user $game $kind -1
-                                if ($n) { KeepLocal $file $kind; WriteAtomic $file $n.bytes $n.at; SetBase $file $n.at; $fromCloud = $true; $S.Conflicts.Remove("$user|$game|$kind") }
-                            } elseif ($null -eq $base) {
-                                # First visit since the conflict guard arrived: take the store's current time as the synced version.
-                                SetBase $file $cAt
-                            }
-                        }
-                    }
+                    try { $fromCloud = PullNewer $user $game $kind $file }
                     catch { Log "cloud check failed ($game $kind): $($_.Exception.Message)"; $res.AddHeader('X-Cloud', 'unreachable') }
                 }
                 if (Test-Path $file) {
@@ -405,7 +599,7 @@ $handler = {
             $user = SafeName $q['user']; $dir = Join-Path $S.Saves $user
             $out = @{}
             if ($user -and (Test-Path $dir)) {
-                Get-ChildItem $dir -File | Where-Object { $_.Extension -in '.sram', '.state', '.native' } |
+                Get-ChildItem $dir -File | Where-Object { $_.Extension -in '.sram', '.state', '.native', '.native-save' } |
                     ForEach-Object { $k = $_.BaseName; $t = (Ms $_.FullName); if (-not $out[$k] -or $out[$k] -lt $t) { $out[$k] = $t } }
             }
             if ($user -and (CloudReady)) {
@@ -479,13 +673,16 @@ $handler = {
     }
 }
 
-# A small pool so a big game download does not block saves or the menu.
-$pool = [RunspaceFactory]::CreateRunspacePool(1, 6); $pool.Open()
+# A small pool so a big game download does not block saves or the menu (desktop emulator games each hold one while open).
+$pool = [RunspaceFactory]::CreateRunspacePool(1, 12); $pool.Open()
 $jobs = New-Object Collections.ArrayList
-# On startup, push any saves the family store is missing (made offline, or before it was connected).
-if ($State.Cloud.url -and $State.Family) {
-    Start-Job -ScriptBlock { param($port) Start-Sleep 3; try { Invoke-RestMethod "http://localhost:$port/api/sync?backfill=1" -TimeoutSec 5 | Out-Null } catch {} } -ArgumentList $port | Out-Null
-}
+# On startup: finish desktop emulator sessions and write the daily save backup, then push any saves the family store
+# is missing (made offline, or before it was connected).
+$sync = [bool]($State.Cloud.url -and $State.Family)
+Start-Job -ScriptBlock { param($port, $sync) Start-Sleep 3
+    try { Invoke-RestMethod "http://localhost:$port/api/native?collect=1" -TimeoutSec 5 | Out-Null } catch {}
+    if ($sync) { Start-Sleep 5; try { Invoke-RestMethod "http://localhost:$port/api/sync?backfill=1" -TimeoutSec 5 | Out-Null } catch {} }
+} -ArgumentList $port, $sync | Out-Null
 while ($listener.IsListening) {
     $ctx = $listener.GetContext()
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $pool

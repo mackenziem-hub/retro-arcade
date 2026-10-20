@@ -1,5 +1,5 @@
 {
-    "version":  "2026.10.19.1931",
+    "version":  "2026.10.20.1808",
     "files":  [
                   {
                       "path":  "app/web/arcade.ico",
@@ -43,7 +43,7 @@
                   },
                   {
                       "path":  "app/server.ps1",
-                      "sha256":  "B08A0E39BAD81EB63417A027E0DC3FF4F2E5DCAEC047A0F5A8CBD7BAEAA11460"
+                      "sha256":  "1DB09D94A5E06344FB53B6F5E72C746E0441C3F7A2895C59E4D9AF4C9FF2E759"
                   },
                   {
                       "path":  "app/updater.ps1",
